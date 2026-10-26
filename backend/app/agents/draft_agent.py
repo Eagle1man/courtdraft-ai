@@ -27,6 +27,7 @@ from app.config import Settings, get_settings
 from app.drafting.section_quality import unusable_reason
 from app.llm import build_llm_provider
 from app.llm.base import LLMMessage, LLMProvider, LLMRequest, LLMRole
+from app.verification.subject_of_proof import proof_gaps
 
 logger = logging.getLogger(__name__)
 
@@ -852,6 +853,20 @@ async def generate_draft(
                 gaps=gaps,
             )
         )
+
+    # Предмет доказывания по виду договора: обстоятельства, которых нет
+    # ни в одном документе дела, уходят в блок «Не хватает данных»
+    # мотивировочной части. Судья обязан видеть, чего в деле не хватает
+    # для вывода, а не читать в акте фразу о «совокупности
+    # доказательств» — по одной таблице на вид договора (см.
+    # app.verification.subject_of_proof).
+    uncovered = proof_gaps(pack.items)
+    if uncovered:
+        for section in result.sections:
+            if section.key == "motivating":
+                section.gaps.extend(uncovered)
+                section.needs_review = True
+                break
 
     # Пометки о нехватке данных не должны оставаться в тексте акта —
     # они уходят в блок «Не хватает данных» (см. _strip_markers).

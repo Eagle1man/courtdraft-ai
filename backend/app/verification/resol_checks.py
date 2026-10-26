@@ -135,6 +135,33 @@ def _fully_partially(text: str, meta: Mapping[str, Any]) -> list[Defect]:
     ]
 
 
+def _partial_without_denial(text: str, meta: Mapping[str, Any]) -> list[Defect]:
+    """Проверки 22: частичное удовлетворение без отказа в остальной части.
+
+    Проверка 5 ловит противоречие («полностью» вместе с отказом), эта —
+    вторую сторону той же ошибки R02: суд удовлетворил требования
+    частично, но не сказал, что в остальной части отказано, и проект
+    остался без ясного исхода по неудовлетворённой части.
+    """
+    if not re.search(
+        r"(удовлетвор\w+[^\n.]{0,80}частично|частичн\w+[^\n.]{0,80}удовлетвор)",
+        text,
+        re.I,
+    ):
+        return []
+    if re.search(r"остальной части", text, re.I) and re.search(r"отказать", text, re.I):
+        return []
+    return [
+        Defect(
+            "RESOL_PARTIAL_NO_DENIAL",
+            "HIGH",
+            "",
+            "удовлетворение частичное, а в резолютивной нет отказа "
+            "в удовлетворении остальной части иска (R02)",
+        )
+    ]
+
+
 Rule = Callable[[str, Mapping[str, Any]], list[Defect]]
 
 # ── Пачка 2: стороны ───────────────────────────────────────────────────────
@@ -226,6 +253,42 @@ def _no_appeal(text: str, meta: Mapping[str, Any]) -> list[Defect]:
     if re.search(r"обжалован", text, re.I):
         return []
     return [Defect("RESOL_NO_APPEAL", "HIGH", "", "не указан порядок и срок обжалования")]
+
+
+def _appeal_order(text: str, meta: Mapping[str, Any]) -> list[Defect]:
+    """Проверки 21: порядок обжалования не подходит под суд и производство.
+
+    Срок и инстанция обжалования зависят от того, кто и как рассмат­ривал
+    дело: мировой судья отправляет жалобу в районный суд (ст. 320.1 ГПК
+    РФ), упрощённый порядок даёт 15 дней вместо месяца (ст. 232.4 ГПК
+    РФ). Правило молчит, когда пункта об обжаловании вовсе нет — это
+    ловит RESOL_NO_APPEAL, и правило не должно повторяться.
+    """
+    if not re.search(r"обжалован", text, re.I):
+        return []
+    out: list[Defect] = []
+    if meta.get("world_court") and not re.search(r"район\w*\s+суд", text, re.I):
+        out.append(
+            Defect(
+                "RESOL_APPEAL_COURT",
+                "MEDIUM",
+                "",
+                "дело рассматривал мировой судья, а инстанция обжалования не "
+                "названа: жалоба подаётся в районный суд (ст. 320.1 ГПК РФ)",
+            )
+        )
+    if meta.get("simplified") and re.search(r"в течение\s+месяц", text, re.I):
+        out.append(
+            Defect(
+                "RESOL_APPEAL_TERM",
+                "MEDIUM",
+                "",
+                "в упрощённом порядке апелляционная жалоба подаётся в течение "
+                "15 дней со дня вынесения решения (ст. 232.4 ГПК РФ), "
+                "в тексте указан месяц",
+            )
+        )
+    return out
 
 
 def _no_motivated(text: str, meta: Mapping[str, Any]) -> list[Defect]:
@@ -517,10 +580,12 @@ RULES: list[Rule] = [
     _total_mismatch,
     _no_amount,
     _fully_partially,
+    _partial_without_denial,
     _no_whom,
     _no_id,
     _no_shares,
     _no_appeal,
+    _appeal_order,
     _no_motivated,
     _no_immediate,
     _no_deadline,

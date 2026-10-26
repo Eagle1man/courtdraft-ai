@@ -34,10 +34,15 @@ from app.verification.evidence_assessment import (
     assessment_of,
     check_evidence_assessment,
 )
-from app.verification.jurisdiction import check_jurisdiction
+from app.verification.forbidden_refs import check_forbidden_refs
+from app.verification.jurisdiction import check_jurisdiction, court_tier
 from app.verification.laws import LawRegistry, extract_fee, fee_matches, state_fee
 from app.verification.persons import PersonFinding, RoleFinding, check_section
-from app.verification.qualification import check_qualification
+from app.verification.procedure_limits import (
+    check_procedure_limits,
+    mentions_simplified,
+)
+from app.verification.qualification import check_qualification, has_supply
 from app.verification.resol_checks import check_resolution
 from app.verification.subject_of_proof import ProofFact, subject_of_proof
 
@@ -57,6 +62,10 @@ class IssueType(StrEnum):
     CONTRADICTION = "CONTRADICTION"
     INCOMPLETE = "INCOMPLETE"
     JURISDICTION_MISMATCH = "JURISDICTION_MISMATCH"
+    PROCEDURE_ORDER = "PROCEDURE_ORDER"
+    PROCEDURE_SIMPLIFIED = "PROCEDURE_SIMPLIFIED"
+    FOREIGN_CODE = "FOREIGN_CODE"
+    FORBIDDEN_REF = "FORBIDDEN_REF"
     CONTRACT_QUALIFICATION = "CONTRACT_QUALIFICATION"
     ARBITRATION_JURISDICTION = "ARBITRATION_JURISDICTION"
     OBJECTIONS_UNADDRESSED = "OBJECTIONS_UNADDRESSED"
@@ -94,6 +103,9 @@ class IssueType(StrEnum):
     RESOL_FEE_FROM_EXEMPT = "RESOL_FEE_FROM_EXEMPT"
     RESOL_MOTIVATION_IN_OPERATIVE = "RESOL_MOTIVATION_IN_OPERATIVE"
     RESOL_WRONG_FEE_EDITION = "RESOL_WRONG_FEE_EDITION"
+    RESOL_APPEAL_COURT = "RESOL_APPEAL_COURT"
+    RESOL_APPEAL_TERM = "RESOL_APPEAL_TERM"
+    RESOL_PARTIAL_NO_DENIAL = "RESOL_PARTIAL_NO_DENIAL"
 
 
 class Severity(StrEnum):
@@ -209,8 +221,13 @@ _LAW_RE = re.compile(
     # ссылка не распознавалась, а её номер статьи тут же попадал в
     # проверку чисел и помечался как выдуманная сумма — то есть
     # корректная ссылка на норму давала ложную тревогу CRITICAL.
+    #
+    # Диапазон «194–199» стоит наравне с перечислением: вводная формула
+    # резолютивной части — «ст. 194–199 ГПК РФ», и без поддержки тире
+    # парсер видел только 194, а 199 и 233 объявлял выдумкой модели,
+    # то есть самая обычная ссылка давала CRITICAL.
     r"(?:ст\.|стат(?:ьёй|ьей|ье|ьи|ью|ьями|ьях|ьям|ьё|и)\.?)\s*"
-    r"(\d+(?:\s*(?:,|и)\s*\d+)*)"
+    r"(\d+(?:\s*(?:,|и|–|—|-)\s*\d+)*)"
     r"\s*(?:([А-ЯЁ][А-ЯЁ ]{0,12}?)(?:РФ|кодекс))?",
     re.IGNORECASE,
 )
@@ -293,12 +310,13 @@ def _laws_in(text: str) -> set[tuple[str, str]]:
     for m in _LAW_RE.finditer(text):
         # «статьями 309, 310, 314 ГК РФ» — это три ссылки, а не одна.
         # «статьями 309, 310 и 314 ГК РФ» — это три ссылки, а не одна.
+        # Диапазон «ст. 194–199 ГПК РФ» — это две ссылки, 194 и 199.
         # Список разделяется и запятой, и союзом «и»: модель пишет и так,
         # и так, а приведённая форма без разбора давала «310 и 314» одним
         # номером статьи, и обе ссылки уходили в проверку чисел.
         articles = [
             a.strip()
-            for a in re.split(r"\s*(?:,|и)\s*", m.group(1))
+            for a in re.split(r"\s*(?:,|и|–|—|-)\s*", m.group(1))
             if a.strip()
         ]
         code = (m.group(2) or "").strip().upper()
@@ -401,6 +419,7 @@ def _resol_meta(
     и проверка FEE_FROM_EXEMPT молчит до тех пор, пока льгота не станет явью.
     """
     category = (pack.category or "").lower()
+    court_text = f"{pack.court_from_docs} {pack.court_name}"
     return {
         "claim_date": _case_date(pack.dates),
         "claim_price": claim_total,
@@ -408,6 +427,14 @@ def _resol_meta(
         "consumer_case": "потребител" in category,
         "claimant_exempt": False,
         "default_judgment": "заочн" in category,
+        # R22: порядок обжалования зависит и от суда, и от вида
+        # производства. Мировой судья — жалоба в районный суд
+        # (ст. 320.1 ГПК РФ), упрощённый порядок — 15 дней
+        # (ст. 232.4 ГПК РФ) вместо месяца.
+        "world_court": court_tier(court_text) == "мировой судья",
+        "simplified": mentions_simplified(
+            [item.text for item in pack.items]
+        ),
     }
 
 
@@ -499,6 +526,11 @@ def verify_draft(
     # Номера частей и пунктов встречаются почти везде.
     small_numbers = {str(i) for i in range(1, 50)}
 
+    # Вид договора нужен проверке запрещённых ссылок: ст. 779 и 781 ГК
+    # РФ законны в споре об оказании услуг и безосновательны, когда
+    # спор идёт по договору поставки.
+    supply = has_supply([item.text for item in pack.items])
+
     # Нормы, которые система цитирует сама, по закону, а не берёт из
     # материалов дела. Разбор 1 425 гражданских решений: ст. 198 ГПК —
     # основание принятия решения, 521 документ; «в доход бюджета» — 98
@@ -580,6 +612,30 @@ def verify_draft(
                 severity=Severity.HIGH,
                 text="",
                 reason=jur_finding.reason,
+            )
+        )
+
+    # Пороги приказного и упрощённого производства — напоминание, а не
+    # блокировка: система не выбирает вид производства за судью, она
+    # только показывает, что по цене иска путь мог быть другим.
+    for proc_finding in check_procedure_limits(
+        [item.text for item in pack.items], claim_total
+    ):
+        order = proc_finding.kind.startswith("order")
+        report.issues.append(
+            Issue(
+                type=(
+                    IssueType.PROCEDURE_ORDER
+                    if order
+                    else IssueType.PROCEDURE_SIMPLIFIED
+                ),
+                severity=(
+                    Severity.MEDIUM
+                    if proc_finding.kind == "order_over"
+                    else Severity.LOW
+                ),
+                text="",
+                reason=proc_finding.reason,
             )
         )
 
@@ -827,6 +883,26 @@ def verify_draft(
                         f"ссылка на ст. {article} {code} не подтверждена: "
                         f"{registry.missing(code, article) or 'нет в материалах дела'}"
                     ),
+                    section=section.name,
+                )
+            )
+
+        # ── 4a. Ссылки, которых в гражданском акте быть не должно ──
+        # Проверка выше отвечает «есть ли статья», эта — «о том ли
+        # это». Ст. 131 и 132 ГПК, ст. 310 ГК, ст. 779 и 781 ГК,
+        # нормы УК, УПК и КоАП существуют и проходят любую проверку
+        # наличия, но в решении по гражданскому делу быть не могут.
+        for forbidden in check_forbidden_refs(text, supply=supply):
+            report.issues.append(
+                Issue(
+                    type=(
+                        IssueType.FOREIGN_CODE
+                        if forbidden.kind == "foreign_code"
+                        else IssueType.FORBIDDEN_REF
+                    ),
+                    severity=Severity[forbidden.severity],
+                    text=text[:200],
+                    reason=forbidden.reason,
                     section=section.name,
                 )
             )

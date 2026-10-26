@@ -139,4 +139,11 @@ class TestRealSectionsStillChecked:
         )
         report = verify_draft(_draft(_stub_section(), real), _pack())
         assert report.claims_checked == 1
-        assert len(report.issues) == 1, [i.reason for i in report.issues]
+        # LOW — это статусы судье (пороги видов производства), а не
+        # дефекты раздела: напоминание об упрощённом порядке текст акта
+        # не портит и в счётчике дефектов не участвует.
+        defects = [
+            issue for issue in report.issues if issue.severity is not Severity.LOW
+        ]
+        assert len(defects) == 1, [i.reason for i in defects]
+        assert "раздел не сформирован" in defects[0].reason

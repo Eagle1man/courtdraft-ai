@@ -55,7 +55,8 @@ class QualificationFinding:
     reason: str  # готовый текст вопроса
 
 
-def _has_supply(texts: list[str]) -> bool:
+def has_supply(texts: list[str]) -> bool:
+    """Есть ли в материалах дела признак договора поставки."""
     return any(_SUPPLY_RE.search(text) for text in texts)
 
 
@@ -84,7 +85,7 @@ def check_qualification(
     Возвращает пусто, когда по материалам не из чего строить вопрос:
     спор не о поставке, или истец — организация, или ИП подтверждён.
     """
-    if not _has_supply(texts):
+    if not has_supply(texts):
         return []
 
     findings: list[QualificationFinding] = []
@@ -94,6 +95,12 @@ def check_qualification(
     defendant_is_org = bool(defendant and _ORG_RE.search(defendant)) or any(
         _ORG_RE.search(text) for text in texts
     )
+    # ИП-ИП — тоже арбитраж: ст. 27 АПК РФ относит к нему споры
+    # между индивидуальными предпринимателями, связанные с
+    # предпринимательской деятельностью, и спор о поставке между ИП —
+    # из таких. Раньше требовалась организация-ответчик, и дело двух ИП
+    # оставалось «общей юрисдикции».
+    defendant_is_ip = bool(defendant and _IP_RE.search(defendant))
 
     if not ip_marked and _plaintiff_is_natural(plaintiff, texts):
         findings.append(
@@ -109,12 +116,16 @@ def check_qualification(
             )
         )
 
-    if ip_marked and defendant_is_org:
+    if ip_marked and (defendant_is_org or defendant_is_ip):
+        counterparty = (
+            "ответчик — ИП" if defendant_is_ip and not defendant_is_org
+            else "ответчик — организация"
+        )
         findings.append(
             QualificationFinding(
                 kind="arbitration",
                 reason=(
-                    "истец — ИП, ответчик — организация, спор из договора "
+                    f"истец — ИП, {counterparty}, спор из договора "
                     "поставки: подведомственность арбитражного суда "
                     "(ст. 27, 28 АПК РФ); при общей юрисдикции дело "
                     "подлежит передаче по подсудности (ч. 2.1 ст. 33 ГПК "

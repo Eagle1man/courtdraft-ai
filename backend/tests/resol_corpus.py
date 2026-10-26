@@ -16,6 +16,10 @@ META_DEFAULTS: dict[str, Any] = {
     "claimant_exempt": False,
     "consumer_case": False,
     "default_judgment": False,
+    # R22: вид суда и вид производства — их нельзя угадывать, только
+    # метаданные: без флага правило молчит.
+    "world_court": False,
+    "simplified": False,
 }
 
 

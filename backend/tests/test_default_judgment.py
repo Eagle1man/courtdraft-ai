@@ -43,7 +43,7 @@ class TestDefaultJudgmentItems:
         result = build_operative([claim()], fee_paid=5100,
                                  procedure=Procedure.DEFAULT)
         assert result.items[0].startswith("Руководствуясь")
-        assert "ст. 198" in result.items[0]
+        assert "ст. 194–199" in result.items[0]
 
     def test_legal_basis_printed_once(self) -> None:
         """Вводная формула печатается один раз.
@@ -135,14 +135,14 @@ class TestDefaultJudgmentItems:
         result = build_operative([claim()], fee_paid=5100,
                                  procedure=Procedure.DEFAULT)
         assert result.render().startswith(
-            "Руководствуясь ст. 198, 233 ГПК РФ, суд решил:"
+            "Руководствуясь ст. 194–199, 233 ГПК РФ, суд решил:"
         )
 
     def test_ordinary_basis_unchanged(self) -> None:
         result = build_operative([claim()], fee_paid=5100,
                                  procedure=Procedure.ORDINARY)
         assert result.render().startswith(
-            "Руководствуясь ст. 198 ГПК РФ, суд решил:"
+            "Руководствуясь ст. 194–199 ГПК РФ, суд решил:"
         )
 
     def test_no_cancellation_right_in_ordinary(self) -> None:
