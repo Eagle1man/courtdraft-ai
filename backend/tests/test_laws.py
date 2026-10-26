@@ -154,6 +154,32 @@ class TestStateFeeCalculation:
         # 13 200 + 0,5% от 15 000 000 = 88 200 → не больше 60 000.
         assert state_fee(16_000_000, date(2023, 1, 1)) == 60_000
 
+    def test_fee_edition_boundary_2024(self) -> None:
+        # П. 28 ст. 19 ФЗ-259: новая сетка — для исков, направленных
+        # в суд после 08.09.2024. Якоря: 80 000 → прежняя 800+3%×60 000
+        # = 2 600, новая — фиксированные 4 000.
+        assert state_fee(80_000, date(2024, 9, 8)) == 2_600  # noqa: PLR2004 - якорь
+        assert state_fee(80_000, date(2024, 9, 9)) == 4_000  # noqa: PLR2004 - якорь
+
+    def test_fee_old_edition_anchors(self) -> None:
+        # Якоря прежней редакции: 4% от 10 400 = 416, от 11 100 = 444.
+        assert state_fee(10_400, date(2020, 1, 1)) == 416  # noqa: PLR2004 - якорь
+        assert state_fee(11_100, date(2020, 1, 1)) == 444  # noqa: PLR2004 - якорь
+
+    def test_fee_pre2010_edition(self) -> None:
+        # Редакция 2001 года: 4% цены иска, но не менее 200 руб.;
+        # 30 000 → 400 + 3% от 20 000 = 1 000; потолок — 20 000.
+        assert state_fee(8_000, date(2005, 1, 1)) == 320  # noqa: PLR2004 - якорь
+        assert state_fee(2_000, date(2005, 1, 1)) == 200  # noqa: PLR2004 - якорь
+        assert state_fee(30_000, date(2005, 1, 1)) == 1_000  # noqa: PLR2004 - якорь
+        assert state_fee(40_000_000, date(2005, 1, 1)) == 20_000  # noqa: PLR2004 - якорь
+
+    def test_fee_pre2010_boundary(self) -> None:
+        # 28.01.2010 — ещё сетка 2001 года: 1 600 + 2% от 30 000 = 2 200;
+        # 29.01.2010 — сетка 2010 года: 800 + 3% от 60 000 = 2 600.
+        assert state_fee(80_000, date(2010, 1, 28)) == 2_200  # noqa: PLR2004 - якорь
+        assert state_fee(80_000, date(2010, 1, 29)) == 2_600  # noqa: PLR2004 - якорь
+
     def test_order_fee_half(self) -> None:
         assert state_fee_order(150_000) == 2_750
 

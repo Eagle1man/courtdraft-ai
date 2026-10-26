@@ -4,32 +4,36 @@
    страница должна работать локально и офлайн. */
 
 :root {
-  --ink: #16181d;
-  --ink-soft: #4a5058;
-  --ink-faint: #767d87;
+  --ink: #0c1927;
+  --ink-soft: #414e5a;
+  --ink-faint: #68747f;
   --paper: #ffffff;
-  --paper-alt: #f6f7f9;
-  --line: #e2e5ea;
-  --line-strong: #cbd0d8;
+  --paper-alt: #f2f4f3;
+  --line: #e8ecea;
+  --line-strong: #cfd7d3;
 
-  --accent: #1c4b8f;
-  --accent-soft: #eaf1fb;
-  --accent-line: #b9d0ef;
+  /* Дизайн-система LawLink: бирюза — бренд и действие, чернильный
+     navy — фирменный знак и тёмные поверхности. */
+  --accent: #007b7f;
+  --accent-soft: #e4f1f0;
+  --accent-line: #b7d8d6;
+  --navy: #10233a;
 
-  --warn: #8a5a00;
-  --warn-soft: #fdf6e7;
-  --warn-line: #ecd9a8;
+  --warn: #96650b;
+  --warn-soft: #faf0db;
+  --warn-line: #ebd8ab;
 
-  --ok: #1d6b45;
-  --ok-soft: #eaf6f0;
-  --ok-line: #b8dfcb;
+  --ok: #1a7f45;
+  --ok-soft: #e7f3ea;
+  --ok-line: #c4e3ce;
 
-  --radius: 10px;
-  --radius-sm: 6px;
+  --radius: 12px;
+  --radius-sm: 8px;
   --wrap: 1120px;
+  --sh-card: 0 1px 2px rgb(12 25 39 / .05);
 
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          "Helvetica Neue", Arial, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
+          "Helvetica Neue", system-ui, sans-serif;
   --mono: "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
 }
 
@@ -43,9 +47,10 @@
     --line: #2a2e35;
     --line-strong: #3a3f48;
 
-    --accent: #7fb0f0;
-    --accent-soft: #16243a;
-    --accent-line: #2b4467;
+    --accent: #6fc8c9;
+    --accent-soft: #10292a;
+    --accent-line: #1d4644;
+    --navy: #0c1927;
 
     --warn: #e0b060;
     --warn-soft: #2a2113;
@@ -110,7 +115,9 @@ a { color: var(--accent); }
 .brand-mark {
   display: grid; place-items: center;
   width: 2.1rem; height: 2.1rem; border-radius: var(--radius-sm);
-  background: var(--accent); color: #fff; font-weight: 700; font-size: 1.05rem;
+  background: linear-gradient(150deg, #16304c 0%, var(--navy) 55%, #0c1927 100%);
+  color: #fff; font-weight: 700; font-size: 1.05rem;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 1px 2px rgb(12 25 39 / .2);
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; }
 .brand-text small { color: var(--ink-faint); font-size: .74rem; }
@@ -206,6 +213,7 @@ a { color: var(--accent); }
 .card {
   border: 1px solid var(--line); border-radius: var(--radius);
   padding: 1.3rem; background: var(--paper);
+  box-shadow: var(--sh-card);
 }
 .card h3 { font-size: 1.02rem; margin-bottom: .45rem; }
 .card p { margin: 0; font-size: .94rem; color: var(--ink-soft); }
@@ -377,6 +385,7 @@ a { color: var(--accent); }
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 1.25rem 1.35rem;
+  box-shadow: var(--sh-card);
 }
 
 .plan-card h3 {
@@ -444,6 +453,7 @@ a { color: var(--accent); }
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 1rem 1.1rem 1.05rem;
+  box-shadow: var(--sh-card);
 }
 
 .flow-step .flow-num {

@@ -2,37 +2,86 @@
  *
  * Оформление подчинено одной задаче: человек должен безошибочно отличать
  * текст, сгенерированный машиной, от проверенного и утверждённого.
- * Поэтому пометка «требует проверки» выглядит заметно, а не как строчка
- * в списке, а весь текст акта визуально приглушён.
+ * Пометка «требует проверки» видна сразу, а весь текст акта визуально
+ * приглушён.
+ *
+ * Стиль — по дизайн-системе LawLink v4 («墨案»): чернильно-синий + бирюза,
+ * волосяные границы, мягкие тени, «хребет» дела слева. Дисциплина цвета:
+ * бирюза — бренд и активное действие; зелёный — завершено/чисто;
+ * янтарь — требует проверки (MEDIUM); красный — риск (HIGH/CRITICAL);
+ * бронза — источники и архивные версии.
  *
  * Без сборки: обычный CSS и ES2020, никакого npm. Для интерфейса на одну
  * страницу сборщик — лишняя зависимость и лишний день настройки.
  */
 
 :root {
-  --ink: #1a1a1a;
-  --muted: #6b6b6b;
-  --line: #d8d8d8;
-  --bg: #f5f5f2;
-  --panel: #ffffff;
-  --accent: #1f3864;
-  --danger: #9c0006;
-  --danger-bg: #fff0ee;
-  --warn: #8a5a00;
-  --warn-bg: #fff8e8;
-  --ok: #1c6b3c;
-  --ok-bg: #eefaf1;
+  /* Холст и поверхности */
+  --bg-canvas: #f2f4f3;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f4f2;
+  --bg-sunken: #e9edeb;
+  --bg-tint: #e9f2f1;
+
+  /* Чернильный текст */
+  --ink: #0c1927;
+  --ink-2: #414e5a;
+  --muted: #68747f;
+  --faint: #98a3ad;
+
+  /* Бренд */
+  --teal: #007b7f;
+  --teal-h: #006367;
+  --teal-deep: #005054;
+  --teal-soft: #e4f1f0;
+  --teal-line: #b7d8d6;
+  --navy: #10233a;
+  --bronze: #8a6b3e;
+  --bronze-bg: #f6f1e6;
+  --bronze-line: #e6d9c0;
+
+  /* Семантические */
+  --green: #1a7f45;
+  --green-bg: #e7f3ea;
+  --green-line: #c4e3ce;
+  --amber: #96650b;
+  --amber-bg: #faf0db;
+  --amber-line: #ebd8ab;
+  --red: #b42318;
+  --red-bg: #fbece9;
+  --red-line: #f0c6bf;
+  --slate: #4a5560;
+  --slate-bg: #eef1f0;
+  --slate-line: #d8dedc;
+
+  /* Границы и тени */
+  --bd-hair: #e8ecea;
+  --bd-subtle: #dde3e0;
+  --bd-default: #cfd7d3;
+  --bd-strong: #b4bfb9;
+  --sh-card: 0 1px 2px rgba(12, 25, 39, 0.05);
+  --sh-hover: 0 6px 16px -4px rgba(12, 25, 39, 0.1), 0 2px 4px rgba(12, 25, 39, 0.04);
+  --sh-pop: 0 12px 32px -8px rgba(12, 25, 39, 0.16), 0 4px 8px -2px rgba(12, 25, 39, 0.06);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
+    "Helvetica Neue", system-ui, sans-serif;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 9800px;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  font-size: 15px;
+  font-family: var(--font-sans);
+  font-size: 14px;
   line-height: 1.55;
+  letter-spacing: -0.004em;
   color: var(--ink);
-  background: var(--bg);
+  background: var(--bg-canvas);
+  -webkit-font-smoothing: antialiased;
 }
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
@@ -40,51 +89,64 @@ body {
 /* ── Шапка ─────────────────────────────────────────────────────── */
 
 .top {
-  background: var(--accent);
+  background: linear-gradient(150deg, #16304c 0%, var(--navy) 55%, #0c1927 100%);
   color: #fff;
-  padding: 16px 0;
+  padding: 15px 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), var(--sh-card);
 }
 
 .top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 
-.brand { display: flex; align-items: center; gap: 14px; }
+.brand { display: flex; align-items: center; gap: 12px; }
 
-.brand .mark { font-size: 30px; }
+/* Фирменный знак: тёмный скруглённый квадрат с бирюзовой полоской —
+ * как в LawLink, чтобы шапка читалась как продукт, а не как заголовок. */
+.brand .mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
 
-.brand h1 { margin: 0; font-size: 21px; letter-spacing: 0.3px; }
+.brand h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.012em; }
 
-.brand .sub { margin: 2px 0 0; font-size: 13px; opacity: 0.82; }
+.brand .sub { margin: 2px 0 0; font-size: 12px; color: rgba(255, 255, 255, 0.66); }
 
-.status { font-size: 13px; opacity: 0.9; text-align: right; }
+.status { font-size: 12.5px; color: rgba(255, 255, 255, 0.78); text-align: right; }
 
 /* Ссылки шапки переносятся целиком, а не посреди слова (п. 10). */
-.status a { white-space: nowrap; }
+.status a { white-space: nowrap; color: #9fd8d6; }
 
 /* ── Предупреждение о статусе текста ──────────────────────────── */
 
 .notice {
-  background: var(--warn-bg);
-  border-bottom: 1px solid #e6d5a8;
-  padding: 11px 20px;
-  font-size: 13.5px;
-  color: #4a3a10;
+  background: var(--amber-bg);
+  border-bottom: 1px solid var(--amber-line);
+  padding: 10px 20px;
+  font-size: 13px;
+  color: #5b4409;
 }
 
-.notice strong { color: var(--danger); }
+.notice strong { color: var(--red); }
 
 /*
-  Баннер демонстрационного режима. Отдельный цвет нужен, чтобы его не
-  спутали с постоянным напоминанием «это проект, а не решение суда»:
-  то сообщение действует всегда, это — про состояние машины.
-*/
+ * Баннер демонстрационного режима. Отдельный цвет нужен, чтобы его не
+ * спутали с постоянным напоминанием «это проект, а не решение суда»:
+ * то сообщение действует всегда, это — про состояние машины.
+ */
 .notice.demo-banner {
-  background: #eef3f8;
-  border-bottom: 1px solid #cfdcea;
-  color: #26384a;
-  line-height: 1.5;
+  background: var(--teal-soft);
+  border-bottom: 1px solid var(--teal-line);
+  color: var(--teal-deep);
 }
 
-.notice.demo-banner strong { color: #1d3557; }
+.notice.demo-banner strong { color: var(--teal-deep); }
 
 /* ── Компоновка ───────────────────────────────────────────────── */
 
@@ -93,33 +155,36 @@ body {
   grid-template-columns: 320px 1fr;
   gap: 20px;
   align-items: start;
-  padding-top: 20px;
-  padding-bottom: 40px;
+  padding-top: 22px;
+  padding-bottom: 44px;
 }
 
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
 }
 
+/* Панель = карточка LawLink: белая, волосяная граница, мягкая тень. */
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--bd-hair);
+  border-radius: var(--r-lg);
   padding: 18px;
+  box-shadow: var(--sh-card);
 }
 
 .panel h2 {
   margin: 0 0 12px;
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--muted);
+  letter-spacing: 0.07em;
+  color: var(--faint);
 }
 
 .mt { margin-top: 22px !important; }
 
-.muted { color: var(--muted); font-size: 13.5px; }
-.small { font-size: 12.5px; }
+.muted { color: var(--muted); font-size: 13px; }
+.small { font-size: 12px; }
 
 /* ── Списки ───────────────────────────────────────────────────── */
 
@@ -130,31 +195,48 @@ body {
 }
 
 .case-list li, .doc-list li {
-  padding: 9px 10px;
+  position: relative;
+  padding: 9px 10px 9px 12px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--r-md);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  transition: background 0.12s, border-color 0.12s;
 }
 
-.case-list li:hover, .doc-list li:hover { background: #f0f0ec; }
+.case-list li:hover, .doc-list li:hover { background: var(--bg-hover); }
 
+/* Выбранное дело: «хребет» слева (spine) + бирюзовая подложка. */
 .case-list li.active {
-  background: #eaf1f8;
-  border-color: #b9cde4;
+  background: var(--teal-soft);
+  border-color: var(--teal-line);
+  color: var(--teal-deep);
   font-weight: 600;
 }
 
-.doc-list li { cursor: default; font-size: 13.5px; }
+.case-list li.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--teal);
+}
+
+.doc-list li { cursor: default; font-size: 13px; }
 
 .doc-list .type {
   display: inline-block;
-  min-width: 88px;
+  min-width: 84px;
   margin-right: 6px;
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--faint);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.06em;
   /* Метка не сливается с названием файла и на телефоне ломается
    * по словам, а не посреди (п. 10 разбора). */
   overflow-wrap: anywhere;
@@ -163,27 +245,37 @@ body {
 /* ── Кнопки ───────────────────────────────────────────────────── */
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font: inherit;
-  font-size: 14px;
-  padding: 9px 15px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
+  font-size: 13px;
+  font-weight: 550;
+  padding: 8px 15px;
+  border: 1px solid var(--bd-default);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
   color: var(--ink);
   cursor: pointer;
+  box-shadow: var(--sh-card);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
 }
 
-.btn:hover:not(:disabled) { background: #f2f2ee; }
+.btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--bd-strong); }
 
+/* Главное действие — бирюза (дисциплина LawLink: teal = активное действие). */
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--teal);
+  border-color: var(--teal);
   color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 80, 84, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-.btn.primary:hover:not(:disabled) { background: #16294a; }
+.btn.primary:hover:not(:disabled) { background: var(--teal-h); border-color: var(--teal-h); }
 
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
 
 .btn.full { width: 100%; }
 
@@ -194,7 +286,14 @@ body {
   gap: 16px;
 }
 
-.head-row h2 { margin: 0 0 4px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.head-row h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  text-transform: none;
+  color: var(--ink);
+}
 
 .head-row p { margin: 0; }
 
@@ -203,16 +302,17 @@ body {
 .progress { margin: 18px 0; }
 
 .progress .bar {
-  height: 6px;
-  background: #e6e6e2;
-  border-radius: 3px;
+  height: 5px;
+  background: var(--bg-sunken);
+  border-radius: var(--r-full);
   overflow: hidden;
 }
 
 .progress .fill {
   height: 100%;
   width: 0;
-  background: var(--accent);
+  background: var(--teal);
+  border-radius: var(--r-full);
   transition: width 0.6s ease;
 }
 
@@ -225,71 +325,151 @@ body {
 
 .alert {
   margin: 16px 0;
-  padding: 11px 13px;
-  border-radius: 6px;
-  font-size: 13.5px;
-  background: var(--danger-bg);
-  border: 1px solid #f0c4c0;
-  color: var(--danger);
+  padding: 10px 13px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  background: var(--red-bg);
+  border: 1px solid var(--red-line);
+  color: var(--red);
 }
 
-.alert.ok { background: var(--ok-bg); border-color: #b9dfc6; color: var(--ok); }
+.alert.ok { background: var(--green-bg); border-color: var(--green-line); color: var(--green); }
 
 /* ── Проверка ─────────────────────────────────────────────────── */
 
 .verification {
   margin: 18px 0;
   padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfbf9;
+  border: 1px solid var(--bd-hair);
+  border-radius: var(--r-lg);
+  background: var(--bg-card);
+  box-shadow: var(--sh-card);
 }
 
-.verification h3 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.verification h3 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--faint);
+}
 
+/* Вердикт — пилюля в духе badge LawLink: рамка + точка-индикатор. */
 .verdict {
-  display: inline-block;
-  padding: 5px 11px;
-  border-radius: 4px;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--r-full);
+  font-size: 12.5px;
   font-weight: 600;
+  border: 1px solid transparent;
 }
 
-.verdict.review { background: var(--warn-bg); color: var(--warn); border: 1px solid #e6d5a8; }
-.verdict.pass { background: var(--ok-bg); color: var(--ok); border: 1px solid #b9dfc6; }
+.verdict::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.8;
+}
+
+.verdict.review { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-line); }
+.verdict.pass { background: var(--green-bg); color: var(--green); border-color: var(--green-line); }
 
 .issues { margin-top: 12px; }
 
+/* Замечание: цветной «хребет» слева — красный у HIGH/CRITICAL,
+ * янтарный у MEDIUM; читается боковым зрением. */
 .issues li {
-  padding: 9px 11px;
+  position: relative;
+  padding: 9px 11px 9px 13px;
   margin-bottom: 7px;
-  border-left: 3px solid var(--muted);
-  background: #fff;
-  border-radius: 0 5px 5px 0;
+  border-left: 3px solid var(--slate-line);
+  background: var(--bg-card);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  border-top: 1px solid var(--bd-hair);
+  border-right: 1px solid var(--bd-hair);
+  border-bottom: 1px solid var(--bd-hair);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.issues li.CRITICAL, .issues li.HIGH { border-left-color: var(--danger); }
-.issues li.MEDIUM { border-left-color: #c98a00; }
-.issues li.LOW { border-left-color: #7a8a99; }
+.issues li.CRITICAL, .issues li.HIGH { border-left-color: var(--red); }
+.issues li.MEDIUM { border-left-color: var(--amber); }
+.issues li.LOW { border-left-color: var(--bd-strong); }
 
-.issues .where { display: block; font-weight: 600; margin-bottom: 2px; }
+/* Строка «где»: точка-индикатор цвета важности. */
+.issues .where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+  color: var(--muted);
+}
 
-.issues .why { color: #444; }
+.issues .where::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--slate-line);
+  flex-shrink: 0;
+}
+
+.issues li.CRITICAL .where, .issues li.HIGH .where { color: var(--red); }
+.issues li.CRITICAL .where::before, .issues li.HIGH .where::before { background: var(--red); }
+.issues li.MEDIUM .where { color: var(--amber); }
+.issues li.MEDIUM .where::before { background: var(--amber); }
+
+.issues .why { color: var(--ink-2); }
 
 .issues .quote {
   display: block;
   margin-top: 5px;
   padding: 5px 8px;
-  background: #f6f6f3;
-  border-radius: 4px;
-  font-size: 12.5px;
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  font-size: 12px;
   color: var(--muted);
   white-space: pre-wrap;
   max-height: 4.5em;
   overflow: hidden;
+  transition: max-height 0.2s ease;
 }
+
+/* Находка кликабельна: цитата обрезана до четырёх строк, полный
+ * фрагмент раскрывается по клику, раздел подсвечивается бирюзой. */
+.issues li.has-quote { cursor: pointer; }
+
+.issues li.has-quote:hover { background: var(--bg-hover); }
+
+.issues li.open .quote { max-height: none; }
+
+/* Подсказка в строке «где»: появляется на наведении, меняется при открытии. */
+.issues li.has-quote .where::after {
+  content: "показать фрагмент";
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  color: var(--teal-deep);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.issues li.has-quote:hover .where::after { opacity: 0.85; }
+
+.issues li.open .where::after { content: "свернуть"; opacity: 0.85; }
+
+/* Короткая вспышка на раздел, из которого взята находка. */
+.section.flash { box-shadow: 0 0 0 2px var(--teal-line), var(--sh-card); }
 
 /* ── Разделы проекта ──────────────────────────────────────────── */
 
@@ -297,9 +477,11 @@ body {
 
 .section {
   margin-bottom: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid var(--bd-hair);
+  border-radius: var(--r-lg);
   overflow: hidden;
+  background: var(--bg-card);
+  box-shadow: var(--sh-card);
 }
 
 .section > header {
@@ -308,25 +490,25 @@ body {
   justify-content: space-between;
   gap: 10px;
   padding: 10px 14px;
-  background: #f0f0ec;
-  border-bottom: 1px solid var(--line);
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--bd-hair);
 }
 
-.section h4 { margin: 0; font-size: 14px; letter-spacing: 0.3px; }
+.section h4 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -0.008em; }
 
 .section .body {
   padding: 14px;
   white-space: pre-wrap;
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: #2c2c2c;
+  font-size: 14px;
+  line-height: 1.68;
+  color: var(--ink-2);
 }
 
 /* Раздел, помеченный как требующий проверки, виден сразу — иначе
  * пометку прочитают только те, кто догадается посмотреть. */
-.section.flagged > header { background: var(--warn-bg); }
+.section.flagged > header { background: var(--amber-bg); border-bottom-color: var(--amber-line); }
 
-.section.flagged { border-color: #e0c98d; }
+.section.flagged { border-color: var(--amber-line); }
 
 /* Замечания, нарисованные внутри раздела: прижаты к тексту, но не
  * теряются в нём — читаются между телом раздела и источниками. */
@@ -335,23 +517,31 @@ body {
 /* Замечания, которые проверка не привязала к разделу. */
 .unsectioned { margin-top: 14px; }
 
+/* Бейджи — пилюли LawLink (рамка + заливка). */
 .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
+  font-weight: 550;
+  padding: 2px 9px;
+  border-radius: var(--r-full);
+  border: 1px solid transparent;
   white-space: nowrap;
+  line-height: 1.6;
 }
 
-.badge.review { background: #f6e3b8; color: var(--warn); }
-.badge.mock { background: #e4e4e0; color: var(--muted); }
-.badge.source { background: #dfe9f3; color: var(--accent); }
+.badge.review { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-line); }
+.badge.mock { background: var(--slate-bg); color: var(--slate); border-color: var(--slate-line); }
+.badge.source { background: var(--teal-soft); color: var(--teal-deep); border-color: var(--teal-line); }
 
+/* Источники — бронзовый «архивный» тон (дисциплина LawLink). */
 .citations {
   padding: 8px 14px;
-  border-top: 1px dashed var(--line);
-  font-size: 12.5px;
-  color: var(--muted);
-  background: #fbfbf9;
+  border-top: 1px dashed var(--bd-hair);
+  font-size: 12px;
+  color: var(--bronze);
+  background: var(--bronze-bg);
 }
 
 /* ── Источники и версии ──────────────────────────────────────── */
@@ -360,44 +550,61 @@ details { margin-top: 18px; }
 
 summary {
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--teal-deep);
   padding: 8px 0;
 }
 
+summary:hover { color: var(--teal); }
+
 details ul li {
   padding: 6px 0;
-  border-bottom: 1px solid #eee;
-  font-size: 13.5px;
+  border-bottom: 1px solid var(--bd-hair);
+  font-size: 13px;
 }
 
 details ul li:last-child { border-bottom: none; }
 
-.v-current { font-weight: 600; }
+.v-current { font-weight: 600; color: var(--teal-deep); }
 
 /* ── Редактор ────────────────────────────────────────────────── */
 
 .editor textarea, .editor input, .editor select {
   width: 100%;
   font: inherit;
-  font-size: 13.5px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  font-size: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--bd-default);
+  border-radius: var(--r-md);
   margin-bottom: 9px;
-  background: #fff;
+  background: var(--bg-card);
+  color: var(--ink);
+  box-shadow: inset 0 1px 2px rgba(12, 25, 39, 0.05);
+}
+
+.editor textarea:focus, .editor input:focus, .editor select:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(0, 123, 127, 0.12);
 }
 
 .editor textarea {
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.55;
 }
 
 .foot {
   padding: 18px 20px 30px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--muted);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--bd-hair);
 }
+
+/* ── Полоса прокрутки ────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bd-default); border-radius: 5px; border: 2px solid var(--bg-canvas); }
+::-webkit-scrollbar-thumb:hover { background: var(--bd-strong); }

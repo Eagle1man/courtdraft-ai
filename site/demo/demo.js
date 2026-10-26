@@ -182,20 +182,42 @@
   }
 
   /* Одно замечание для списка. Внутри раздела порядок: уровень, а
-   * раздел и так виден вокруг; в общем списке — уровень и раздел. */
+   * раздел и так виден вокруг; в общем списке — уровень и раздел.
+   * Фрагмент (issue.text) рисуется, если он в записи прогона есть:
+   * без него находка остаётся некликабельной, подсказка не врёт. */
   function issueItem(issue, withSection) {
     var where = [label(SEVERITY_TEXT, issue.severity) || issue.severity];
     if (withSection && issue.section) where.push(issue.section);
     return (
       '<li class="' +
       escapeHtml(issue.severity) +
+      (issue.text ? " has-quote" : "") +
       '"><span class="where">' +
       escapeHtml(where.join(" · ")) +
       '</span><span class="why">' +
       escapeHtml(issue.reason) +
-      "</span></li>"
+      "</span>" +
+      (issue.text
+        ? '<span class="quote">' + escapeHtml(issue.text) + "</span>"
+        : "") +
+      "</li>"
     );
   }
+
+  /* Находка кликабельна: раскрывает фрагмент и подсвечивает раздел —
+   * тот же приём, что в приложении (styles: .issues li.has-quote). */
+  document.addEventListener("click", function (event) {
+    var item = event.target.closest(".issues > li.has-quote");
+    if (!item) return;
+    item.classList.toggle("open");
+    var section = item.closest(".section");
+    if (section) {
+      section.classList.add("flash");
+      window.setTimeout(function () {
+        section.classList.remove("flash");
+      }, 900);
+    }
+  });
 
   function renderSections(data) {
     var box = $("sections");

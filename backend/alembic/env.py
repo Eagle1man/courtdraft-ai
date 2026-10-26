@@ -13,11 +13,11 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from alembic import context
 from app.config import get_settings
-from app.db.session import build_database_url, describe_url, is_sqlite
+from app.db.session import build_database_url, is_sqlite
 from app.models.entities import Base
 
 config = context.config

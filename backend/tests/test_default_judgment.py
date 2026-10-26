@@ -103,6 +103,33 @@ class TestDefaultJudgmentItems:
         assert any("Решение может быть обжаловано" in i
                    for i in ordinary.items)
 
+    def test_consequence_cites_part_one_article_237(self) -> None:
+        """Срок на отмену — ч. 1 ст. 237 ГПК РФ, а не ст. 233.
+
+        Ст. 233 ГПК устанавливает само заочное производство и сроков
+        не содержит; семь дней со дня вручения — ч. 1 ст. 237
+        (сверено по официальному тексту, 2026-10-24).
+        """
+        result = build_operative([claim()], fee_paid=5100,
+                                 procedure=Procedure.DEFAULT)
+        consequence = next(i for i in result.items if "семи дней" in i)
+        assert "ч. 1 ст. 237 ГПК РФ" in consequence
+        assert "ст. 233" not in consequence
+
+    def test_appeal_cites_part_two_article_237(self) -> None:
+        """Апелляция на заочное решение — ч. 2 ст. 237 ГПК РФ, а не ст. 332.
+
+        Ст. 332 ГПК описывает последствия отмены заочного решения и к
+        обжалованию отношения не имеет: ссылка на неё в сроке на
+        апелляцию лишала жалобу процессуального основания.
+        """
+        result = build_operative([claim()], fee_paid=5100,
+                                 procedure=Procedure.DEFAULT)
+        appeal = next(i for i in result.items
+                      if "заочное решение может быть обжаловано" in i.lower())
+        assert "ч. 2 ст. 237 ГПК РФ" in appeal
+        assert "ст. 332" not in appeal
+
     def test_legal_basis_includes_article_233(self) -> None:
         """Основание дополняется ст. 233 автоматически."""
         result = build_operative([claim()], fee_paid=5100,

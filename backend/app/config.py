@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     storage_dir: Path = PROJECT_ROOT / "data" / "cases"
     documents_dir: Path = PROJECT_ROOT / "data" / "cases" / "documents"
     demo_dir: Path = PROJECT_ROOT / "data" / "demo"
-    laws_dir: Path = PROJECT_ROOT / "data" / "laws"
+    laws_dir: Path = BACKEND_DIR / "data" / "laws"
     templates_dir: Path = PROJECT_ROOT / "data" / "templates"
     # Каталог веб-интерфейса. Интерфейс раздаётся тем же приложением, что и
     # API: отдельный сервер и отдельный порт означали бы лишнюю настройку

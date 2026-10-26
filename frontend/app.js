@@ -410,8 +410,13 @@ function renderSections(draft) {
       .map((issue) => {
         const where = [label(SEVERITY_TEXT, issue.severity) || issue.severity];
         if (withSection && issue.section) where.push(issue.section);
+        // Находка с фрагментом кликабельна: подсказка и разворот
+        // добавляются только если text есть — иначе класс обещает
+        // раскрытие, которого не на что раскрыть.
+        const liClass =
+          escapeHtml(issue.severity) + (issue.text ? " has-quote" : "");
         return (
-          `<li class="${escapeHtml(issue.severity)}">` +
+          `<li class="${liClass}">` +
           `<span class="where">${escapeHtml(where.join(" · "))}</span>` +
           `<span class="why">${escapeHtml(issue.reason)}</span>` +
           (issue.text
@@ -607,6 +612,21 @@ $("btn-new-case").onclick = async () => {
     showAlert(`Не удалось создать дело: ${error.message}`);
   }
 };
+
+// Находка кликабельна: раскрывает полный фрагмент текста акта, из
+// которого она взята, и на девять десятых секунды подсвечивает раздел.
+// Список замечаний перерисовывается при каждой загрузке проекта,
+// поэтому слушатель вешается один раз на документ, а не на элементы.
+document.addEventListener("click", (event) => {
+  const item = event.target.closest(".issues > li.has-quote");
+  if (!item) return;
+  item.classList.toggle("open");
+  const section = item.closest(".section");
+  if (section) {
+    section.classList.add("flash");
+    window.setTimeout(() => section.classList.remove("flash"), 900);
+  }
+});
 
 (async function start() {
   await loadHealth();

@@ -3,6 +3,9 @@
  * Отдельный файл, а не дописывание app.css: стили интерфейса
  * продукта копируются в сайт как есть, и дописывать туда демо-специфичные
  * правила нельзя — при следующей сборке они потерялись бы молча.
+ *
+ * Токены общие с app.css (дизайн-система LawLink): волосяные границы,
+ * чернильная подложка реплики системы, navy — реплика пользователя.
  */
 
 .chat-page {
@@ -14,11 +17,13 @@
   padding-bottom: 40px;
 }
 
+/* Заголовки боковой колонки — как и в продукте: микро-капс, faint. */
 .chat-side h2 {
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--muted);
+  letter-spacing: 0.07em;
+  color: var(--faint);
   margin: 0 0 8px;
 }
 
@@ -44,26 +49,30 @@
   font-size: 13px;
   line-height: 1.35;
   padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--paper);
+  border: 1px solid var(--bd-default);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
   color: var(--ink);
   cursor: pointer;
+  box-shadow: var(--sh-card);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .chat-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--teal);
+  color: var(--teal-deep);
+  background: var(--teal-soft);
 }
 
 .chat-window {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--bd-hair);
+  border-radius: var(--r-lg);
   display: flex;
   flex-direction: column;
   min-height: 560px;
   overflow: hidden;
+  box-shadow: var(--sh-card);
 }
 
 .chat-log {
@@ -73,7 +82,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: #fbfbf9;
+  background: var(--bg-canvas);
 }
 
 .bubble {
@@ -86,19 +95,22 @@
 
 .bubble-body {
   padding: 11px 14px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   font-size: 14px;
   line-height: 1.55;
 }
 
+/* Система отвечает карточкой на светлом холсте. */
 .bubble-system .bubble-body {
-  background: var(--paper);
-  border: 1px solid var(--line);
+  background: var(--bg-card);
+  border: 1px solid var(--bd-hair);
   border-top-left-radius: 3px;
+  box-shadow: var(--sh-card);
 }
 
+/* Реплика пользователя — чернильный navy (тёмный цвет LawLink). */
 .bubble-user .bubble-body {
-  background: #16294a;
+  background: var(--navy);
   color: #fff;
   border-top-right-radius: 3px;
 }
@@ -123,8 +135,8 @@
 .bubble-body blockquote {
   margin: 8px 0;
   padding: 10px 14px;
-  background: #f4f4f0;
-  border-left: 3px solid var(--line-strong);
+  background: var(--bg-sunken);
+  border-left: 3px solid var(--bd-strong);
   white-space: pre-wrap;
   font-size: 13.5px;
 }
@@ -140,13 +152,15 @@
   letter-spacing: 0.4px;
 }
 
+/* Цвета важности — та же дисциплина, что в проекте решения:
+ * красный — риск, янтарь — проверить, остальное — справочно. */
 .sev-CRITICAL,
 .sev-HIGH {
-  color: var(--danger);
+  color: var(--red);
 }
 
 .sev-MEDIUM {
-  color: #8a5b00;
+  color: var(--amber);
 }
 
 .sev-LOW {
@@ -157,8 +171,8 @@
   display: flex;
   gap: 10px;
   padding: 12px 14px;
-  border-top: 1px solid var(--line);
-  background: var(--paper);
+  border-top: 1px solid var(--bd-hair);
+  background: var(--bg-card);
 }
 
 .chat-input input {
@@ -166,15 +180,17 @@
   font: inherit;
   font-size: 14px;
   padding: 10px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: #fff;
+  border: 1px solid var(--bd-default);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
   color: var(--ink);
+  box-shadow: inset 0 1px 2px rgba(12, 25, 39, 0.05);
 }
 
 .chat-input input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(0, 123, 127, 0.12);
 }
 
 .sr-only {
@@ -206,8 +222,8 @@
   font-size: 13.5px;
   padding: 8px 10px;
   margin-bottom: 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: #fff;
+  border: 1px solid var(--bd-default);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
   color: var(--ink);
 }

@@ -90,6 +90,11 @@ class TestObjectionsSection:
         assert section.needs_review is True
         assert "не обнаружены" in section.text
         assert section.citations == []
+        # Регрессия: fallback собран правилами, а не mock-провайдером —
+        # без is_mock=False секция по умолчанию помечалась моком, и
+        # движок проверки/интерфейс показывали честный текст как заглушку.
+        assert section.is_mock is False
+        assert section.built_by == "rules"
 
     def test_no_evaluation_in_text(self) -> None:
         # Оценка доводов — работа суда; в разделе её быть не должно.

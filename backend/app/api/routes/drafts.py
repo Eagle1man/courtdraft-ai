@@ -159,6 +159,15 @@ def _draft_out(
 
     verification_out: VerificationOut | None = None
     if verification is not None:
+        # Свежий отчёт (синхронный wait=true) держит объекты Issue
+        # с to_dict(), запись Verification из базы — уже словари JSON.
+        # Без нормализации объекты отсекались проверкой isinstance(dict),
+        # и ответ синхронной генерации отвечал «0 замечаний», пока в
+        # сохранённой базе их было несколько (проверено на REAL-01: 0 vs 5).
+        raw_issues = [
+            item.to_dict() if hasattr(item, "to_dict") else item
+            for item in verification.issues
+        ]
         verification_out = VerificationOut(
             status=verification.status,
             issues=[
@@ -169,7 +178,7 @@ def _draft_out(
                     reason=str(item.get("reason", "")),
                     text=str(item.get("text", "")),
                 )
-                for item in verification.issues
+                for item in raw_issues
                 if isinstance(item, dict)
             ],
             claims_checked=verification.claims_checked,
@@ -316,6 +325,12 @@ async def generate_draft(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
 
+    # Сохранение версии обновляет строку проекта, и серверный updated_at
+    # (onupdate=func.now() в TimestampMixin) при flush «протухает»: чтение
+    # протухшего атрибута вне зелёной нити падает с MissingGreenlet.
+    # Явно перечитываем строку перед сериализацией — тот же приём, что
+    # уже используется в PATCH /api/cases/{id}.
+    await session.refresh(draft)
     return _draft_out(draft, version, report)
 
 
@@ -340,8 +355,19 @@ async def get_job(job_id: uuid.UUID) -> dict[str, object]:
 
 @router.get("/cases/{case_id}/draft", response_model=DraftOut | None)
 async def get_draft(case_id: uuid.UUID, session: SessionDep) -> DraftOut | None:
-    """GET /api/cases/{id}/draft — последняя версия проекта."""
+    """GET /api/cases/{id}/draft — последняя версия проекта.
+
+    Неизвестное дело — 404: раньше молчаливый null не давал отличить
+    «проекта ещё нет» от опечатки в идентификаторе. Для существующего
+    дела без проекта null остаётся — на нём держится «Проект не
+    сформирован» в интерфейсе.
+    """
     service = DraftService(session)
+    case = await service.cases.get(case_id)
+    if case is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено"
+        )
     draft = await service.get_draft_for_case(case_id)
     if draft is None:
         return None
@@ -360,6 +386,11 @@ async def list_versions(case_id: uuid.UUID, session: SessionDep) -> DraftListOut
     видеть документ в том виде, в каком он был принят.
     """
     service = DraftService(session)
+    case = await service.cases.get(case_id)
+    if case is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено"
+        )
     draft = await service.get_draft_for_case(case_id)
     if draft is None:
         raise HTTPException(
@@ -424,6 +455,11 @@ async def get_evidence(
     документов построен каждый раздел.
     """
     service = DraftService(session)
+    case = await service.cases.get(case_id)
+    if case is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено"
+        )
     items = await service.list_evidence(case_id, category=category, limit=limit)
     return EvidencePackOut(
         case_id=case_id,
@@ -453,4 +489,9 @@ async def set_status(
     versions = await service.list_versions(draft_id)
     version = versions[-1] if versions else None
     verification = draft.verifications[-1] if draft.verifications else None
+    # Смена статуса — UPDATE строки проекта: серверный updated_at
+    # протухает при flush, и его чтение вне зелёной нити роняет запрос
+    # с MissingGreenlet. Перечитываем после чтения отношений (versions,
+    # verifications), чтобы refresh не вливал их заново без необходимости.
+    await session.refresh(draft)
     return _draft_out(draft, version, verification)

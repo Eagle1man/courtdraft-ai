@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from app.agents.draft_agent import NEEDS_REVIEW, DraftResult
 from app.agents.evidence_pack import MONTHS, EvidenceItem, EvidencePack
@@ -37,6 +38,7 @@ from app.verification.jurisdiction import check_jurisdiction
 from app.verification.laws import LawRegistry, extract_fee, fee_matches, state_fee
 from app.verification.persons import PersonFinding, RoleFinding, check_section
 from app.verification.qualification import check_qualification
+from app.verification.resol_checks import check_resolution
 from app.verification.subject_of_proof import ProofFact, subject_of_proof
 
 
@@ -67,6 +69,31 @@ class IssueType(StrEnum):
     EXPERT_UNASSESSED = "EXPERT_UNASSESSED"
     CLAIM_AMOUNT_UNPARSED = "CLAIM_AMOUNT_UNPARSED"
     CITATION_DANGLING = "CITATION_DANGLING"
+    PENALTY_BASIS_UNCONFIRMED = "PENALTY_BASIS_UNCONFIRMED"
+    # Проверки резолютивной части (app/verification/resol_checks.py):
+    # имена значений совпадают с id срабатываний датасета фикстур.
+    RESOL_NO_COSTS = "RESOL_NO_COSTS"
+    RESOL_COSTS_MERGED = "RESOL_COSTS_MERGED"
+    RESOL_TOTAL_MISMATCH = "RESOL_TOTAL_MISMATCH"
+    RESOL_NO_AMOUNT = "RESOL_NO_AMOUNT"
+    RESOL_FULLY_PARTIALLY = "RESOL_FULLY_PARTIALLY"
+    RESOL_NO_WHOM = "RESOL_NO_WHOM"
+    RESOL_NO_ID = "RESOL_NO_ID"
+    RESOL_NO_SHARES = "RESOL_NO_SHARES"
+    RESOL_NO_APPEAL = "RESOL_NO_APPEAL"
+    RESOL_NO_MOTIVATED = "RESOL_NO_MOTIVATED"
+    RESOL_NO_IMMEDIATE = "RESOL_NO_IMMEDIATE"
+    RESOL_NO_DEADLINE = "RESOL_NO_DEADLINE"
+    RESOL_NO_PROPERTY_VALUE = "RESOL_NO_PROPERTY_VALUE"
+    RESOL_ZAOCHNO_NO_OTMENA_ORDER = "RESOL_ZAOCHNO_NO_OTMENA_ORDER"
+    RESOL_ALIMONY_NO_INDEXATION = "RESOL_ALIMONY_NO_INDEXATION"
+    RESOL_ALIMONY_NO_PERIOD = "RESOL_ALIMONY_NO_PERIOD"
+    RESOL_NO_CONSUMER_FINE = "RESOL_NO_CONSUMER_FINE"
+    RESOL_PROPORTION_NON_PROPERTY = "RESOL_PROPORTION_NON_PROPERTY"
+    RESOL_PROPORTION_REDUCED = "RESOL_PROPORTION_REDUCED"
+    RESOL_FEE_FROM_EXEMPT = "RESOL_FEE_FROM_EXEMPT"
+    RESOL_MOTIVATION_IN_OPERATIVE = "RESOL_MOTIVATION_IN_OPERATIVE"
+    RESOL_WRONG_FEE_EDITION = "RESOL_WRONG_FEE_EDITION"
 
 
 class Severity(StrEnum):
@@ -335,9 +362,119 @@ SYSTEM_LAWS: frozenset[tuple[str, str]] = frozenset(
         ("98", "ГПК"),  # распределение судебных расходов, пошлина в бюджет
         ("100", "ГПК"),  # расходы на представителя
         ("233", "ГПК"),  # заочное решение
+        ("237", "ГПК"),  # обжалование заочного: отмена (ч. 1) и апелляция (ч. 2)
         ("321", "ГПК"),  # срок подачи апелляционной жалобы
     }
 )
+
+
+#: Дата вида 15.04.2025 — так в материалах дела записаны почти все даты.
+_RU_DATE = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b")
+#: Дата рядом с претензией: «Претензия от 01.09.2025» и тому подобное.
+_PRETRIAL_CLAIM_DATE = re.compile(r"претензи\w*\D{0,60}?(\d{2}\.\d{2}\.\d{4})", re.I)
+#: Дата рядом со словом об исполнении: «оплатил 05.09.2025», «возврат от 10.09.2025».
+_SATISFACTION_DATE = re.compile(
+    r"(?:оплат|возврат|возвращ|перечисл|удовлетвор|исполн)\D{0,60}?(\d{2}\.\d{2}\.\d{4})",
+    re.I,
+)
+#: ЗоЗПП, ст. 22: требование потребителя удовлетворяется в десятидневный срок,
+#: по его истечении отказ добровольно не удовлетворять считается подтверждённым.
+_PENALTY_WINDOW_DAYS = 10
+
+
+def _parse_ru_date(raw: str) -> date | None:
+    """Дата из материалов дела, если записана в форме 15.04.2025."""
+    try:
+        day, month, year = (int(part) for part in raw.split("."))
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _resol_meta(
+    pack: EvidencePack, stated: float | None, claim_total: float
+) -> dict[str, Any]:
+    """Метаданные для проверок резолютивной — только то, что видно в материалах.
+
+    Неизвестное остаётся ложным: правило без метаданных молчит, а не угадывает.
+    Льгота пошлины (claimant_exempt) в материалах дела не читается — пока False,
+    и проверка FEE_FROM_EXEMPT молчит до тех пор, пока льгота не станет явью.
+    """
+    category = (pack.category or "").lower()
+    return {
+        "claim_date": _case_date(pack.dates),
+        "claim_price": claim_total,
+        "paid_fee": stated,
+        "consumer_case": "потребител" in category,
+        "claimant_exempt": False,
+        "default_judgment": "заочн" in category,
+    }
+
+
+def _check_penalty_basis(
+    text: str, pack: EvidencePack, report: VerificationReport, section_name: str
+) -> None:
+    """Штраф в резолютивной против материалов дела.
+
+    Штраф (п. 6 ст. 13 ЗоЗПП) взыскивается, только если ответчик
+    добровольно не удовлетворил требование. Но «не найдено» не равно
+    «не было»: дефект разметки неотличим от отсутствия документа,
+    поэтому отсутствие претензии — это MEDIUM, а не HIGH.
+    """
+    if not re.search(r"\bштраф", text, re.I):
+        return
+    claimed = [
+        name
+        for name, doc in pack.documents.items()
+        if re.search(r"претензи", name, re.I) or re.search(r"претензи", doc, re.I)
+    ]
+    if not claimed:
+        report.issues.append(
+            Issue(
+                type=IssueType.PENALTY_BASIS_UNCONFIRMED,
+                severity=Severity.MEDIUM,
+                text=text[:200],
+                reason=(
+                    "штраф начислен; по материалам претензия не найдена — "
+                    "проверьте, заявлялось ли требование до суда"
+                ),
+                section=section_name,
+            )
+        )
+        return
+    claim_on = None
+    for name in claimed:
+        near = _PRETRIAL_CLAIM_DATE.search(pack.documents[name])
+        first = _RU_DATE.search(pack.documents[name])
+        raw = near.group(1) if near else (first.group(0) if first else "")
+        claim_on = _parse_ru_date(raw) if raw else None
+        if claim_on:
+            break
+    if claim_on is None:
+        return
+    for name, doc in pack.documents.items():
+        if name in claimed:
+            continue
+        done = _SATISFACTION_DATE.search(doc)
+        if not done:
+            continue
+        satisfied = _parse_ru_date(done.group(1))
+        if satisfied is None or not 0 <= (satisfied - claim_on).days <= _PENALTY_WINDOW_DAYS:
+            continue
+        report.issues.append(
+            Issue(
+                type=IssueType.PENALTY_BASIS_UNCONFIRMED,
+                severity=Severity.HIGH,
+                text=text[:200],
+                reason=(
+                    "штраф начислен при отсутствии подтверждённого отказа: "
+                    f"претензия от {claim_on:%d.%m.%Y} исполнена {satisfied:%d.%m.%Y} "
+                    "— в десятидневный срок (ЗоЗПП, ст. 22)"
+                ),
+                section=section_name,
+            )
+        )
+        return
 
 
 def verify_draft(
@@ -676,6 +813,21 @@ def verify_draft(
                             f"{edition}: {state_fee(claim_total, fee_date):.2f} "
                             "руб. (НК РФ, ст. 333.19)"
                         ),
+                        section=section.name,
+                    )
+                )
+
+            _check_penalty_basis(text, pack, report, section.name)
+
+            # Проверки резолютивной части: 22 текстовых правила, каждое
+            # покрыто фикстурами (tests/data/resol_fixtures.json).
+            for defect in check_resolution(text, _resol_meta(pack, stated, claim_total)):
+                report.issues.append(
+                    Issue(
+                        type=IssueType[defect.id],
+                        severity=Severity(defect.severity),
+                        text=defect.fragment or text[:200],
+                        reason=defect.reason,
                         section=section.name,
                     )
                 )
