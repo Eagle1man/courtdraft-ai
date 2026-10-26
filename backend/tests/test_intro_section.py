@@ -64,23 +64,27 @@ class TestIntroSection:
         assert "Ответчик: ООО «Фирма-Трейд»" in section.text
         assert "Предмет спора: Взыскать задолженность" in section.text
 
-    def test_unavailable_requisites_marked(self) -> None:
-        # Состав суда, секретарь и дата — их нет в материалах: ставится
-        # отметка, а не выдуманные реквизиты.
+    def test_unavailable_requisites_not_in_text(self) -> None:
+        # Состав суда, секретарь и дата — их нет в материалах: в тексте
+        # проекта нет ни пометки «ТРЕБУЕТ ПРОВЕРКИ», ни выдуманных
+        # реквизитов. Нехватка уходит в блок «Не хватает данных».
         result = asyncio.run(generate_draft(_pack(), TEMPLATE, provider=_NoLLM()))
         section = result.sections[0]
         assert section.needs_review is True
-        assert "Состав суда: ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ" in section.text
-        assert "Секретарь судебного заседания" in section.text
-        assert "Дата принятия решения: ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ" in section.text
+        assert "ТРЕБУЕТ ПРОВЕРКИ" not in section.text
+        assert "Состав суда" not in section.text
+        assert any("Состав суда" in gap for gap in section.gaps)
+        assert any("Секретарь судебного заседания" in gap for gap in section.gaps)
+        assert any("Дата принятия решения" in gap for gap in section.gaps)
 
-    def test_missing_sides_marked(self) -> None:
+    def test_missing_sides_not_in_text(self) -> None:
         result = asyncio.run(
             generate_draft(
                 _pack(with_sides=False, with_claims=False), TEMPLATE, provider=_NoLLM()
             )
         )
         section = result.sections[0]
-        assert "Истец: ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ" in section.text
-        assert "Ответчик: ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ" in section.text
-        assert "Предмет спора: ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ" in section.text
+        assert "ТРЕБУЕТ ПРОВЕРКИ" not in section.text
+        assert any("Истец" in gap for gap in section.gaps)
+        assert any("Ответчик" in gap for gap in section.gaps)
+        assert any("Предмет спора" in gap for gap in section.gaps)

@@ -685,9 +685,10 @@ class TestRefreshAfterUpdate:
     ) -> None:
         """Отказ LLM по ходу генерации: проект собирается, секции честно помечены.
 
-        Контракт draft_agent: упавшая секция получает текст
-        «Раздел не подготовлен...» с needs_review — не пустой текст
-        и не успешный вид.
+        Контракт draft_agent: упавшая секция получает пустой текст,
+        needs_review и причину в блоке пробелов (gaps) — в тексте
+        проекта не остаётся ни пометки «ТРЕБУЕТ ПРОВЕРКИ», ни вида
+        успешного раздела там, где раздела нет.
         """
         import app.llm as llm_module
 
@@ -701,9 +702,15 @@ class TestRefreshAfterUpdate:
         draft = await _generate_sync(api_client, case_id)
 
         assert draft["sections"]
-        failed = [s for s in draft["sections"] if "Раздел не подготовлен" in s["text"]]
-        assert failed, "упавшие секции должны быть помечены честным текстом"
+        failed = [
+            s
+            for s in draft["sections"]
+            if any("раздел не сформирован" in g for g in s.get("gaps", []))
+        ]
+        assert failed, "упавшие секции должны получить причину в пробелах"
         assert all(section["needs_review"] for section in failed)
+        assert all(not section["text"].strip() for section in failed)
+        assert all("ТРЕБУЕТ ПРОВЕРКИ" not in s["text"] for s in failed)
 
         # Правки резолютивной строятся правилами и не требуют модели —
         # они обязаны присутствовать даже при неработающей LLM.

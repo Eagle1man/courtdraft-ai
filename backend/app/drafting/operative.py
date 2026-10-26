@@ -456,16 +456,14 @@ DEFAULT_ARTICLE = "ст. 198, 233 ГПК РФ"
 
 
 def _reference(claim: MoneyClaim) -> str:
-    """Основание и источник требования одной строкой.
+    """Основание требования одной строкой в скобках.
 
-    Отдельная функция, потому что при незаполненном источнике в скобках
-    остаётся висячая запятая: «(расходы на представителя, )». Это
-    выглядит как недоделка и в проекте решения выглядит неопрятно.
+    Имя файла («иск.docx») в тексте акта НЕ попадает: это техническая
+    деталь системы, а не реквизит судебного решения. Источник
+    сохраняется в citations — судья видит его в интерфейсе, но в текст
+    пункта он не превращается.
     """
-    parts = [claim.basis]
-    if claim.source:
-        parts.append(claim.source)
-    return f"({', '.join(parts)})"
+    return f"({claim.basis})"
 
 
 def _satisfy(
@@ -548,20 +546,19 @@ def _render_counter_claim(
     предписание взыскать ноль.
     """
     subject = "встречных исковых требований ответчика"
+    # Имя файла в тексте пункта не попадает: это деталь системы, а не
+    # реквизит решения. Основание — да, оно юридическое.
     if counter.outcome is Outcome.DENIED:
-        return (
-            f"В удовлетворении {subject} ({counter.basis}, "
-            f"{counter.source}) отказать."
-        )
+        return f"В удовлетворении {subject} ({counter.basis}) отказать."
     if counter.amount is None:
         return (
-            f"Удовлетворить {subject} ({counter.basis}, "
-            f"{counter.source}): взыскать с {named.plaintiff_genitive} в "
+            f"Удовлетворить {subject} ({counter.basis}): взыскать с "
+            f"{named.plaintiff_genitive} в "
             f"пользу {named.defendant_genitive} {REVIEW} (сумма не "
             f"установлена)."
         )
     return (
-        f"Удовлетворить {subject} ({counter.basis}, {counter.source}): "
+        f"Удовлетворить {subject} ({counter.basis}): "
         f"взыскать с {named.plaintiff_genitive} в пользу "
         f"{named.defendant_genitive} {_amount(counter.amount, counter.kopecks)}."
     )
@@ -703,9 +700,12 @@ def build_operative(
                 f"({other.description})."
             )
         else:
+            # Имя файла в текст акта не подставляется (см. _reference):
+            # «(иск.docx)» — техническая деталь, а не реквизит.
+            body = other.description.rstrip()
+            suffix = "" if body.endswith((".", "!", "?", "…")) else "."
             result.items.append(
-                f"Удовлетворить требование истца: {other.description} "
-                f"({other.source})."
+                f"Удовлетворить требование истца: {body}{suffix}"
             )
 
     # 3. Встречные требования ответчика. Идут после основных, потому

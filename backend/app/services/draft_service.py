@@ -232,6 +232,7 @@ class DraftService:
                 "needs_review": s.needs_review,
                 "citations": s.citations,
                 "latency_ms": s.latency_ms,
+                "gaps": s.gaps,
             }
             for s in result.sections
         ]

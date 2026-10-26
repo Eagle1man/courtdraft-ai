@@ -612,6 +612,41 @@ def verify_draft(
             )
         )
 
+    # ── 4d. Реквизиты карточки против материалов дела ─────────────
+    # Карточку заводят руками, документы — то, что лежит в деле. На
+    # живом деле карточка содержала «суд советского района» и «1w121»,
+    # а в иске — «мировой судья судебного участка № 123 района
+    # Хамовники» и «2-456/2025». В проект акта идут документы (см.
+    # _build_intro_section), а расхождение показывается здесь, чтобы
+    # судья поправил карточку, а не промолчал.
+    def _norm(value: str) -> str:
+        return " ".join(value.split()).casefold()
+
+    requisites: list[tuple[str, str, str]] = []
+    if pack.court_from_docs and pack.court_name:
+        requisites.append(("суд", pack.court_from_docs, pack.court_name))
+    if pack.case_number_from_docs and pack.case_number:
+        requisites.append(
+            ("номер дела", pack.case_number_from_docs, pack.case_number)
+        )
+    for label, from_docs, from_card in requisites:
+        if _norm(from_docs) == _norm(from_card):
+            continue
+        report.issues.append(
+            Issue(
+                type=IssueType.CONTRADICTION,
+                severity=Severity.MEDIUM,
+                text="",
+                reason=(
+                    f"{label} в материалах и в карточке не совпадают: "
+                    f"в документах — «{from_docs}», в карточке — "
+                    f"«{from_card}». В проект подставлено то, что указано "
+                    "в документах дела."
+                ),
+                section="Вводная часть",
+            )
+        )
+
     for section in draft.sections:
         text = section.text
 
@@ -664,11 +699,21 @@ def verify_draft(
             report.issues.append(
                 Issue(
                     type=IssueType.INCOMPLETE,
-                    severity=Severity.HIGH,
+                    # Раздел, который не удалось сформировать, — дыра в
+                    # акте: без него документ не подписать. Раньше это
+                    # было HIGH, и такая дыра выглядела как предупреждение.
+                    severity=(
+                        Severity.CRITICAL if section.error else Severity.HIGH
+                    ),
                     text="",
                     reason=(
-                        f"раздел «{section.name}» пуст: проверять нечего, "
-                        "данные из материалов в него не попали"
+                        f"раздел «{section.name}» не сформирован: "
+                        f"{section.error}"
+                        if section.error
+                        else (
+                            f"раздел «{section.name}» пуст: проверять нечего, "
+                            "данные из материалов в него не попали"
+                        )
                     ),
                     section=section.name,
                 )
@@ -791,7 +836,12 @@ def verify_draft(
         # указана неверно. По НК РФ (ст. 333.19) размер пошлины считается
         # от цены иска по редакции, действовавшей на дату обращения,
         # и расхождение — повод показать судье оба числа.
-        if "резолютив" in section.name.lower():
+        # Гейт — по ключу раздела, а не по названию: в шаблоне раздел
+        # называется «РЕШИЛ» и слова «резолютив» в названии нет, поэтому
+        # все 22 проверки резолютивной части не выполнялись вовсе. Тесты
+        # гонялись с name="Резолютивная часть" и оставались зелёными —
+        # они проверяли сами проверки, а не гейт.
+        if section.key == "operative":
             stated = extract_fee(text)
             fee_date = _case_date(pack.dates)
             if stated is not None and not fee_matches(

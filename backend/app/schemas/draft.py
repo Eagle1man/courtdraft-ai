@@ -36,6 +36,10 @@ class SectionOut(BaseModel):
     needs_review: bool = False
     citations: list[str] = Field(default_factory=list)
     latency_ms: int = 0
+    #: Чего не хватает в материалах дела. Показывается отдельным блоком,
+    #: а не строкой в тексте: в акте не должно стоять
+    #: «ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ».
+    gaps: list[str] = Field(default_factory=list)
 
 
 class IssueOut(BaseModel):

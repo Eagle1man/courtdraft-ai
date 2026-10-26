@@ -87,21 +87,60 @@ def detect_mime_type(filename: str, provided: str = "") -> str:
 def guess_document_type(filename: str, text: str) -> str:
     """Предварительно определить тип документа (п.11).
 
-    Эвристика по имени файла и первым строкам. Это НЕ классификация
-    агентом — она дешёвая, делается до индексации и нужна, чтобы
-    разложить документы по коллекциям. Agent в Фазе 6 уточнит тип по
-    содержимому.
+    Эвристика по заголовку документа, имени файла и первым строкам.
+    Это НЕ классификация агентом — она дешёвая, делается до индексации
+    и нужна, чтобы разложить документы по коллекциям.
+
+    Порядок проверок важен и задан живым делом (1w121):
+
+    1. Заголовок документа («Документ 5. Возражение на исковое
+       заявление») — самый надёжный признак.
+    2. Имя файла — только потом и без общего маркера «иск»: под него
+       попадали «Возражение на исковое заявление.docx», «Опись
+       приложений к исковому заявлению.docx» и «Расчёт процентов
+       (приложение к иску)» — все три считались иском, и возражения
+       ответчика шли в требования истца.
+    3. Содержимое первых строк — для протокола и экспертного
+       заключения, они решают маршрут обработки.
 
     Возвращает строку, а не строгий Enum: типы расширяемы (п.11).
     """
     name = filename.lower()
+    raw_first = text.split("\n", 1)[0].strip().lower()
+    # Заголовок — короткая первая строка документа («Документ 5.
+    # Возражение на исковое заявление»). Длинная первая строка — это
+    # просто первое предложение: «Прошу взыскать задолженность по
+    # договору…» в иске читалось бы как договор, и весь документ
+    # уходил не в ту категорию.
+    header = raw_first[:400] if len(raw_first) <= 140 else ""
+    head = text[:4000].lower()
 
+    # 1. Заголовок документа.
+    if "возражени" in header:
+        return DocumentType.RESPONSE.value
+    if "исковое заявление" in header:
+        return DocumentType.CLAIM.value
+    # Досудебная претензия — НЕ иск: это требование до суда, и в
+    # требования истца оно попадать не должно (в материалах дела оно
+    # лежит отдельным документом, см. 1w121).
+    if re.search(r"ходатайств|заявлен\w*\s+о\s+рассмотрени", header):
+        return DocumentType.MOTION.value
+    if "протокол" in header:
+        return DocumentType.PROTOCOL.value
+    if "договор" in header:
+        return DocumentType.CONTRACT.value
+    # Приложения и описи — не самостоятельный иск, хотя имя файла их
+    # содержит («Опись приложений к исковому заявлению»).
+    if re.search(r"опис\w*|приложени\w*|расч[ёе]т", header):
+        return DocumentType.OTHER.value
+
+    # 2. Имя файла. Общего маркера «иск» здесь больше нет.
     by_name: list[tuple[tuple[str, ...], str]] = [
-        (("claim", "иск", "pretens"), DocumentType.CLAIM.value),
+        (("claim", "pretens", "исковое", "иск."), DocumentType.CLAIM.value),
         (("response", "otzyv", "vozrazhen", "возраж"), DocumentType.RESPONSE.value),
         (("contract", "dogovor", "договор", "contract"), DocumentType.CONTRACT.value),
         (("receipt", "check", "chek", "receipt", "платёж", "чек"), DocumentType.RECEIPT.value),
-        (("protocol", "протокол", "protocol"), DocumentType.PROTOCOL.value),
+        (("protocol", "протокол"), DocumentType.PROTOCOL.value),
         (("expert", "zakluchenie", "заключение", "эксперт"), DocumentType.EXPERT_OPINION.value),
         (("act", "акт"), DocumentType.ACT.value),
         (("motion", "hodataistvo", "ходатайство"), DocumentType.MOTION.value),
@@ -110,9 +149,9 @@ def guess_document_type(filename: str, text: str) -> str:
         if any(marker in name for marker in markers):
             return doc_type
 
-    # По содержимому — только для протокола: он решает, пойдёт ли дело
-    # по ветке Transcript Agent, и ошибка здесь меняет весь маршрут.
-    head = text[:4000].lower()
+    # 3. По содержимому — для протокола и экспертного заключения: они
+    # решают, пойдёт ли дело по ветке Transcript Agent и как цитировать
+    # заключение, и ошибка здесь меняет весь маршрут.
     if re.search(r"\bпротокол\b.{0,40}\b(заседан|судебн)", head, re.DOTALL):
         return DocumentType.PROTOCOL.value
     if re.search(r"\bзаключение\s+(судебной\s+)?эксперт", head):

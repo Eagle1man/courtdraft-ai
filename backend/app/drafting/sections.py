@@ -153,6 +153,7 @@ def resplit_sections(
                     str(c) for c in section.get("citations", []) or []
                 ],
                 "latency_ms": int(section.get("latency_ms", 0)),
+                "gaps": [str(g) for g in section.get("gaps", []) or []],
             }
         )
     return result

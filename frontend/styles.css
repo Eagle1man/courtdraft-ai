@@ -624,6 +624,20 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 /* Замечания, которые проверка не привязала к разделу. */
 .unsectioned { display: flex; flex-direction: column; gap: 8px; }
 
+/* Не хватает данных в материалах — блок вне текста акта. */
+.gaps {
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  border: 1px dashed rgba(216, 138, 44, 0.5);
+  border-radius: 8px;
+  background: rgba(255, 236, 208, 0.5);
+  font-size: 13px;
+  color: #7a4a12;
+}
+.gaps b { display: block; margin-bottom: 4px; }
+.gaps ul { margin: 0; padding-left: 18px; }
+.gaps li { margin: 2px 0; }
+
 /* ── Источники, версии, правка — сворачиваемые блоки ───────────── */
 
 .details-box {

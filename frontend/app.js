@@ -715,11 +715,21 @@ function renderSections(draft) {
 
     const article = document.createElement("article");
     article.className = "sec" + (section.is_mock ? " stub" : "");
+    // Чего не хватает в материалах — отдельным блоком, а не строкой
+    // внутри текста: в проекте акта не должно стоять «ТРЕБУЕТ
+    // ПРОВЕРКИ СПЕЦИАЛИСТОМ», но судья обязан видеть, каких данных
+    // в деле нет.
+    const gaps =
+      section.gaps && section.gaps.length
+        ? `<div class="gaps"><b>Не хватает данных:</b><ul>` +
+          section.gaps.map((g) => `<li>${escapeHtml(g)}</li>`).join("") +
+          `</ul></div>`
+        : "";
     article.innerHTML =
       `<div class="sh"><span class="no">${index + 1}</span>` +
       `<span class="st">${escapeHtml(section.name)}</span>` +
       `${chips.join("")}</div>` +
-      `<div class="body"><div class="txt">${escapeHtml(section.text)}</div>` +
+      `<div class="body">${gaps}<div class="txt">${escapeHtml(section.text)}</div>` +
       ownIssues.map(remarkHtml).join("") +
       (section.citations && section.citations.length
         ? `<div class="cites">Источники: ${escapeHtml(section.citations.join(", "))}</div>`

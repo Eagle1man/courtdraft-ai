@@ -175,8 +175,13 @@ class TestBuiltByIsMarked:
 
 class TestUnrecognisedClaimsAreVisible:
     @pytest.mark.asyncio
-    async def test_unknown_requirement_mentioned_in_text(self) -> None:
-        """Непознанное требование показывается судье, а не теряется."""
+    async def test_unknown_requirement_shown_in_gaps(self) -> None:
+        """Непознанное требование показывается судье, а не теряется.
+
+        Оно не входит в текст акта (там нет пометок о нехватке данных),
+        но попадает в блок «Не хватает данных» — судья видит, что
+        требование осталось вне разбора.
+        """
         pack = EvidencePack(case_number="5-1/2019")
         pack.items.append(
             EvidenceItem(
@@ -196,7 +201,8 @@ class TestUnrecognisedClaimsAreVisible:
         result = await generate_draft(pack, template, provider=WrongLLM())
         section = result.sections[0]
         assert section.needs_review
-        assert "загрязнение" in section.text
+        assert "загрязнение" not in section.text
+        assert any("загрязнение" in gap for gap in section.gaps)
 
     @pytest.mark.asyncio
     async def test_missing_fee_marks_section_for_review(self) -> None:
@@ -217,8 +223,10 @@ class TestUnrecognisedClaimsAreVisible:
             ]
         }
         result = await generate_draft(pack, template, provider=WrongLLM())
-        assert result.sections[0].needs_review
-        assert "ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ" in result.sections[0].text
+        section = result.sections[0]
+        assert section.needs_review
+        assert "ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ" not in section.text
+        assert section.gaps
 
 
 class TestOtherSectionsStillUseModel:

@@ -151,6 +151,7 @@ def _draft_out(
                         needs_review=bool(raw.get("needs_review", False)),
                         citations=[str(c) for c in raw.get("citations", [])],
                         latency_ms=int(raw.get("latency_ms", 0)),
+                        gaps=[str(g) for g in raw.get("gaps", []) or []],
                     )
                 )
                 for citation in raw.get("citations", []):

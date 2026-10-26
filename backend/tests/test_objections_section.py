@@ -70,9 +70,13 @@ class TestObjectionsSection:
         assert section.key == "objections"
         assert section.is_mock is False
         assert section.needs_review is False
-        assert "02_response.txt" in section.text
+        # Название документа в тексте — без расширения файла: «.txt» в
+        # тексте акта выглядит как техническая деталь. Полное имя файла
+        # остаётся в citations.
+        assert "02_response: " in section.text
+        assert "03_letter: " in section.text
+        assert ".txt" not in section.text
         assert "услуги не оказывались" in section.text
-        assert "03_letter.txt" in section.text
         assert "расторгнут по соглашению сторон" in section.text
 
     def test_citations_list_sources(self) -> None:

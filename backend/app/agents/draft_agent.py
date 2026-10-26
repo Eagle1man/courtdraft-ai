@@ -24,7 +24,7 @@ from typing import Any
 
 from app.agents.evidence_pack import EvidencePack
 from app.config import Settings, get_settings
-from app.drafting.section_quality import not_formed_text, unusable_reason
+from app.drafting.section_quality import unusable_reason
 from app.llm import build_llm_provider
 from app.llm.base import LLMMessage, LLMProvider, LLMRequest, LLMRole
 
@@ -37,6 +37,21 @@ NO_LAW_FOUND = "Норма права не найдена. Требуется п
 # Разделы, которые собираются по правилам, а не генерируются моделью.
 # Ключи совпадают с ключами шаблона data/templates/civil_judgment.json.
 RULES_BUILT_SECTIONS = frozenset({"operative", "objections", "introductory"})
+
+#: Якорное начало для разделов, которые модель проваливает чаще всего.
+#:
+#: Живой прогон (22.10.2026): «УСТАНОВИЛ» приходил на английском
+#: (7 % кириллицы, обрыв ровно на лимите токенов), «Мотивировочная» —
+#: русским описанием работы («Хорошо, давайте разберемся…»). Оба
+#: пропускались проверкой пригодности и исчезали из проекта.
+#:
+#: Якорь решает обе причины разом: модель начинает с готовой русской
+#: фразы, поэтому не тратит токены на рассуждение на другом языке и не
+#: описывает свою работу — ей остаётся продолжить заданным голосом.
+SECTION_ANCHORS: dict[str, str] = {
+    "established": "Суд установил:",
+    "motivating": "Разрешая дело, суд исходит из следующего.",
+}
 
 SYSTEM_PROMPT = """Ты — помощник судьи. Пишешь ТОЛЬКО текст одного раздела решения суда.
 
@@ -74,6 +89,11 @@ class SectionDraft:
     #: не было, и верификация помечала собственный итог резолюции
     #: выдумкой модели — 8 CRITICAL на проекте без единой выдумки.
     built_by: str = "model"
+    #: Чего нет в материалах дела. Показывается отдельным блоком, а не
+    #: строкой внутри текста: в проекте акта не должно стоять
+    #: «ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ» — это техническая пометка, а не
+    #: текст судебного решения (см. _strip_markers).
+    gaps: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -292,6 +312,53 @@ def _postprocess(text: str, section: dict[str, Any]) -> tuple[str, bool]:
     return cleaned, needs_review
 
 
+def _strip_markers(section: SectionDraft) -> None:
+    """Убрать пометки о нехватке данных из текста раздела.
+
+    Правило продукта: в тексте проекта не стоит «ТРЕБУЕТ ПРОВЕРКИ
+    СПЕЦИАЛИСТОМ». Это техническая инструкция системе, а не текст
+    судебного решения: она попадала в печатную форму, и судья видел в
+    акте строчку про «специалиста». Всё, чего нет в материалах, уходит
+    в блок «Не хватает данных» (SectionDraft.gaps) — тот же
+    перечень, но вне текста акта.
+
+    Правила разбора строки:
+
+    * «Состав суда: ТРЕБУЕТ ПРОВЕРКИ…» — строка не идёт в текст, ярлык
+      становится пробелом.
+    * «[текст оборван по лимиту ответа] ТРЕБУЕТ…» — то же самое,
+      но ярлык сохраняется как есть.
+    * Строка без ярлыка целиком считается пометкой: и в тексте акта
+      не остаётся, и в пробелы она попадает со своей формулировкой.
+    """
+    if NEEDS_REVIEW not in section.text and NO_LAW_FOUND not in section.text:
+        return
+
+    kept: list[str] = []
+    for line in section.text.split("\n"):
+        if NEEDS_REVIEW not in line and NO_LAW_FOUND not in line:
+            kept.append(line)
+            continue
+        rest = line
+        for marker in (NEEDS_REVIEW, NO_LAW_FOUND):
+            rest = rest.replace(marker, "")
+        rest = rest.strip().strip(",:;- ").strip()
+        original = line.strip()
+        if ":" in original:
+            label = original.split(":", 1)[0].strip()
+            note = f"{label}: данных нет в материалах дела"
+        else:
+            note = rest
+        if note:
+            section.gaps.append(note)
+        if len(rest) >= 60:
+            # За пометкой стоит настоящее предложение — его оставляем.
+            kept.append(rest)
+
+    section.text = "\n".join(kept).strip()
+    section.needs_review = True
+
+
 # Служебные подписи, которые модель переносит в текст решения.
 # Это не содержание проекта, а метаданные запроса.
 _ECHO_MARKERS = (
@@ -393,13 +460,6 @@ def _build_operative_section(section: dict[str, Any], pack: EvidencePack) -> Sec
 
     text = result.render()
 
-    if unrecognised:
-        listed = "; ".join(f"— {item}" for item in unrecognised)
-        text += (
-            f"\n\nТребования, которые не удалось отнести к установленным "
-            f"основаниям, требуют проверки специалистом:\n{listed}."
-        )
-
     citations: list[str] = [claim.source for claim in money if claim.source]
     citations.extend(claim.source for claim in others if claim.source)
     citations.extend(claim.source for claim in counters if claim.source)
@@ -414,6 +474,11 @@ def _build_operative_section(section: dict[str, Any], pack: EvidencePack) -> Sec
         citations=citations,
         needs_review=bool(result.gaps) or bool(unrecognised),
         built_by="rules",
+        # Неразобранные требования — тоже пробел: судья должен увидеть,
+        # что часть требований осталась вне разбора, но в тексте акта
+        # эта пометка стоять не должна.
+        gaps=[f"не разобрано: {item}" for item in unrecognised]
+        + list(result.gaps),
     )
 
 
@@ -423,6 +488,70 @@ def _side_name(pack: EvidencePack, role: str) -> str:
     for entry in pack.participants:
         if entry.endswith(marker):
             return entry[: -len(marker)]
+    return ""
+
+
+def _document_title(filename: str) -> str:
+    """Название документа без расширения файла.
+
+    В тексте раздела «Возражение на исковое заявление: «…»» читается
+    нормально, а «Возражение на исковое заявление.docx: «…»» — как
+    техническая деталь. Полное имя файла остаётся в citations: по нему
+    проверка сверяет ссылку с настоящим документом дела.
+    """
+    return re.sub(r"\.(?:docx?|pdf|txt|md|rtf)$", "", filename or "", flags=re.I)
+
+
+def _dispute_subject(pack: EvidencePack) -> str:
+    """Предмет спора — формулировка из материалов, а не первая фраза.
+
+    Раньше здесь бралась первая строка категории «claims», и на живом
+    деле это была фраза из возражения ответчика: вводная часть
+    объявляла предметом спора чужие слова (дело 1w121, 4 из 7 цитат в
+    разделе «Доводы ответчика» были не от той стороны).
+
+    Порядок поиска — от самого точного источника к самому общему:
+
+    1. Заголовок иска («ИСКОВОЕ ЗАЯВЛЕНИЕ / о взыскании суммы займа и
+       процентов…») — так предмет называет сам истец.
+    2. Формулировка из текста дела («по иску A к B о взыскании…») —
+       так предмет называют участники и суд.
+    3. Первая фраза требования из иска — если заголовка нет.
+    """
+    claim_texts = [
+        text
+        for name, text in pack.documents.items()
+        # «иск.docx» не содержит «исков», поэтому фильтр был шире формы
+        # слова: иначе настоящий иск не попадал в поиск и предмет спора
+        # брался из чужого документа.
+        if re.search(r"иск|заявлени", name.lower())
+    ]
+    for text in claim_texts:
+        found = re.search(
+            # «ИСКОВОЕ ЗАЯВЛЕНИЕ» + перенос строки + «о взыскании …».
+            # \s* уже перебирает переводы строки, поэтому лишний \n+
+            # после него ломал совпадение и предмет спора падал на
+            # первую фразу требования.
+            r"исковое\s+заявление\s*(?:[^\n]*\n\s*)?(о\s+[^\n]{4,200})",
+            text,
+            re.IGNORECASE,
+        )
+        if found:
+            return found.group(1).strip()
+    for text in pack.documents.values():
+        found = re.search(
+            # «по иску Смирновой О.В. к Кузнецову А.П. о взыскании …».
+            # Точки в инициалах внутри промежутка разрешены: иначе
+            # совпадения нет и предмет спора брался из первой фразы.
+            r"по\s+иску\s+[^\n;,]{2,140}?\sо\s+([^\n;,]{4,140})",
+            text,
+            re.IGNORECASE,
+        )
+        if found:
+            return f"о {found.group(1).strip()}"
+    claims = pack.by_category("claims")
+    if claims:
+        return claims[0].text.strip()
     return ""
 
 
@@ -436,19 +565,24 @@ def _build_intro_section(section: dict[str, Any], pack: EvidencePack) -> Section
     честной отметкой, которую судья заполнит сам.
     """
     lines: list[str] = ["Именем Российской Федерации", ""]
-    if pack.court_name:
-        lines.append(pack.court_name)
-    if pack.case_number:
-        lines.append(f"Дело № {pack.case_number}")
+    # Реквизиты берутся из документов дела, а не из карточки: карточку
+    # заводят руками и она расходится с материалами (на живом деле —
+    # «суд советского района» и «1w121» против настоящих реквизитов).
+    # Расхождение с карточкой показывает проверка.
+    court = pack.court_from_docs or pack.court_name
+    number = pack.case_number_from_docs or pack.case_number
+    if court:
+        lines.append(court)
+    if number:
+        lines.append(f"Дело № {number}")
     lines.append("")
 
     for role in ("истец", "ответчик"):
         name = _side_name(pack, role)
         lines.append(f"{role.capitalize()}: {name or NEEDS_REVIEW}")
 
-    claims = pack.by_category("claims")
-    if claims:
-        subject = claims[0].text.strip()
+    subject = _dispute_subject(pack)
+    if subject:
         if len(subject) > 400:
             subject = subject[:400].rstrip() + "…"
         lines.append(f"Предмет спора: {subject}")
@@ -509,7 +643,9 @@ def _build_objections_section(
     paragraphs: list[str] = []
     citations: list[str] = []
     for item in objections:
-        paragraphs.append(f"{item.source_document}: «{item.text}»")
+        paragraphs.append(
+            f"{_document_title(item.source_document)}: «{item.text}»"
+        )
         if item.source_document and item.source_document not in citations:
             citations.append(item.source_document)
 
@@ -620,64 +756,107 @@ async def generate_draft(
 
         request_text, citations = build_section_prompt(section, pack)
 
-        request = LLMRequest(
-            messages=[
-                LLMMessage(
-                    role="system",
-                    content=SYSTEM_PROMPT.format(
-                        review=NEEDS_REVIEW, no_law=NO_LAW_FOUND
+        # Две попытки. Первая — обычный запрос. Вторая — с якорным
+        # началом: на живом прогоне «УСТАНОВИЛ» приходил английским
+        # рассуждением и обрывался ровно на лимите токенов, а
+        # «Мотивировочная» — описанием работы модели («Хорошо, давайте
+        # разберемся…»). Якорная фраза держит ответ в русском тексте с
+        # первой буквы, поэтому лимит на второй попытке поднят.
+        prompts = [request_text]
+        anchor = SECTION_ANCHORS.get(section["key"], "")
+        if anchor:
+            prompts.append(
+                f"{request_text}\n\nНачни текст ровно с фразы «{anchor}».\n"
+                "Дальше — только текст раздела: без пояснений, планов и "
+                "описания того, что ты делаешь. Пиши по-русски, "
+                "официально-деловым стилём."
+            )
+
+        text = ""
+        needs_review = False
+        is_mock = False
+        error = ""
+        gaps: list[str] = []
+        latency_ms = 0
+        reason = ""
+
+        for attempt, prompt in enumerate(prompts):
+            request = LLMRequest(
+                messages=[
+                    LLMMessage(
+                        role="system",
+                        content=SYSTEM_PROMPT.format(
+                            review=NEEDS_REVIEW, no_law=NO_LAW_FOUND
+                        ),
                     ),
-                ),
-                LLMMessage(role="user", content=request_text),
-            ],
-            role=LLMRole.GENERATION,
-            # Низкая температура: нужна работа с фактами, а не свободное письмо.
-            temperature=0.1,
-            # Раздел решения — не кандидатская, длинный текст роняет
-            # качество на маленькой модели и растягивает время на CPU.
-            # 420 токенов — предел для 1.5B на CPU: дальше качество
-            # падает быстрее, чем растёт время генерации.
-            max_tokens=420,
+                    LLMMessage(role="user", content=prompt),
+                ],
+                role=LLMRole.GENERATION,
+                # Низкая температура: нужна работа с фактами, а не свободное письмо.
+                temperature=0.1,
+                # Раздел решения — не кандидатская, длинный текст роняет
+                # качество на маленькой модели и растягивает время на CPU.
+                # 420 токенов — предел для 1.5B на CPU: дальше качество
+                # падает быстрее, чем растёт время генерации.
+                max_tokens=420 if attempt == 0 else 760,
+            )
+            started_section = time.perf_counter()
+            try:
+                response = await llm.generate(request)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Раздел %s не сгенерирован: %s", section["key"], exc)
+                error = str(exc)[:200]
+                break
+            latency_ms += int((time.perf_counter() - started_section) * 1000)
+
+            # Ответ модели может оказаться не текстом раздела, а её
+            # рассуждениями или повтором одной фразы. Такой текст не
+            # идёт в проект: сначала даётся вторая попытка с якорем,
+            # а если и она не удалась — раздел остаётся несформированным
+            # и попадает в блок «Не хватает данных».
+            candidate, candidate_review = _postprocess(response.text, section)
+            bad = unusable_reason(candidate)
+            if not bad:
+                text = candidate
+                needs_review = candidate_review
+                is_mock = response.is_mock
+                error = ""
+                break
+            reason = bad
+            logger.info(
+                "Раздел %s (попытка %d) отклонён: %s",
+                section["key"],
+                attempt + 1,
+                bad,
+            )
+
+        if not text:
+            # Раздел не сформирован: в тексте пусто, причина — в блоке
+            # пробелов. Верификация по полю error поднимает это до
+            # CRITICAL — в акте дыра, а не предупреждение.
+            detail = error or reason or "модель не вернула текст раздела"
+            if not error:
+                error = detail
+            gaps.append(f"раздел не сформирован: {detail}")
+
+        result.sections.append(
+            SectionDraft(
+                key=section["key"],
+                name=section["name"],
+                text=text,
+                is_mock=is_mock,
+                citations=citations,
+                needs_review=needs_review or bool(gaps),
+                latency_ms=latency_ms,
+                error=error,
+                gaps=gaps,
+            )
         )
 
-        started_section = time.perf_counter()
-        try:
-            response = await llm.generate(request)
-            text, needs_review = _postprocess(response.text, section)
-            # Ответ модели может оказаться не текстом раздела, а её
-            # рассуждениями или повтором одной фразы. В проект решения
-            # такое попадать не должно: вместо мусора ставится честная
-            # отметка с причиной.
-            reason = unusable_reason(text)
-            error = ""
-            if reason:
-                text = not_formed_text(reason, NEEDS_REVIEW)
-                needs_review = True
-                error = reason
-                logger.info("Раздел %s отклонён: %s", section["key"], reason)
-            result.sections.append(
-                SectionDraft(
-                    key=section["key"],
-                    name=section["name"],
-                    text=text,
-                    is_mock=response.is_mock,
-                    citations=citations,
-                    needs_review=needs_review,
-                    latency_ms=int((time.perf_counter() - started_section) * 1000),
-                    error=error,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Раздел %s не сгенерирован: %s", section["key"], exc)
-            result.sections.append(
-                SectionDraft(
-                    key=section["key"],
-                    name=section["name"],
-                    text=f"Раздел не подготовлен из-за ошибки модели. {NEEDS_REVIEW}",
-                    needs_review=True,
-                    error=str(exc)[:200],
-                )
-            )
+    # Пометки о нехватке данных не должны оставаться в тексте акта —
+    # они уходят в блок «Не хватает данных» (см. _strip_markers).
+    for section in result.sections:
+        _strip_markers(section)
 
     result.total_latency_ms = int((time.perf_counter() - started) * 1000)
     return result

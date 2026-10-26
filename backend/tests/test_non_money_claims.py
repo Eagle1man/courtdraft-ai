@@ -47,14 +47,22 @@ class TestTerminationRecognised:
         result = build_operative([], [claim])
         assert any("расторжение договора" in item for item in result.items)
 
-    def test_source_cited(self) -> None:
+    def test_source_kept_out_of_text(self) -> None:
+        """Имя источника не попадает в текст акта.
+
+        Раньше пункт кончался «(расторжение договора, иск.docx)»: имя
+        файла в решении суда читается как техническая ошибка. Источник
+        остаётся в citations раздела и судья видит его в интерфейсе, в
+        текст пункта он не превращается.
+        """
         claim = Claimant(
             description="расторжение договора",
             source="исковое заявление",
             outcome=Outcome.SATISFIED,
         )
         result = build_operative([], [claim])
-        assert any("исковое заявление" in item for item in result.items)
+        assert any("расторжение договора" in item for item in result.items)
+        assert all("исковое заявление" not in item for item in result.items)
 
 
 class TestRefusalToPerformRecognised:
