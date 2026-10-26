@@ -64,6 +64,16 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * Атрибут hidden должен побеждать любые display из наших классов.
+ * Без этой строки у .modal (display:flex) и .metrics (display:grid)
+ * атрибут hidden игнорируется: пустое окно «Документ» висит поверх
+ * страницы и не закрывается — кнопка ставит hidden, а CSS его
+ * перебивает. Авторские правила всегда сильнее пользовательских,
+ * поэтому без !important здесь не обойтись.
+ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
