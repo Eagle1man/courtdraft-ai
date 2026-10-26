@@ -91,7 +91,10 @@ async def ingest_document(
     sha256 = hashlib.sha256(data).hexdigest()
     documents = DocumentRepository(session)
 
-    existing = await documents.find_by_sha256(sha256)
+    # Дубль ищем внутри дела, а не по всей базе: один и тот же документ
+    # законно встречается в разных делах (типовой иск, типовой договор),
+    # глобальная проверка запрещала бы вторую загрузку туда же.
+    existing = await documents.find_by_sha256(sha256, case_id=case_id)
     if existing is not None:
         raise IngestionError(
             f"{filename}: документ с таким содержимым уже загружен "

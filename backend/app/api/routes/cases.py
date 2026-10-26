@@ -6,11 +6,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entities import Case, CaseDocument, CaseStatus, DocumentType, Participant
@@ -19,6 +30,7 @@ from app.schemas.case import (
     CaseListOut,
     CaseOut,
     CaseUpdate,
+    DocumentDetailOut,
     DocumentOut,
     DocumentRegister,
     ParticipantOut,
@@ -29,6 +41,14 @@ router = APIRouter(prefix="/api/cases", tags=["cases"])
 
 # Starlette отказался от старого имени; используем актуальное.
 HTTP_422 = status.HTTP_422_UNPROCESSABLE_CONTENT
+
+# Метки обезличивания исходных материалов («<ДАТА23>»): цифра внутри
+# метки обязательна — иначе законный текст вида «<br>» или «<h2>»
+# помечался бы как скрытые данные.
+_PLACEHOLDER = re.compile(r"<[А-ЯЁA-Za-z]{2,12}\d{1,4}>")
+
+# Форматы, которые умеет извлекать app.ingestion.extract.
+_ALLOWED_SUFFIXES = frozenset({"txt", "md", "pdf", "docx", "html", "htm", "json"})
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
@@ -91,6 +111,8 @@ def _to_document_out(document: CaseDocument) -> DocumentOut:
         page_count=document.page_count,
         sha256=document.sha256,
         is_known_type=DocumentType.is_known(document.document_type),
+        characters=len(document.text),
+        has_placeholders=bool(_PLACEHOLDER.search(document.text)),
         created_at=document.created_at,
     )
 
@@ -185,6 +207,118 @@ async def list_documents(
     return [_to_document_out(d) for d in documents]
 
 
+@router.get(
+    "/{case_id}/documents/{document_id}", response_model=DocumentDetailOut
+)
+async def get_document(
+    case_id: uuid.UUID, document_id: uuid.UUID, session: SessionDep
+) -> DocumentDetailOut:
+    """GET /api/cases/{id}/documents/{doc_id} — материал дела с текстом.
+
+    Текст отдаётся отдельным запросом, а не списком: список материалов
+    читают часто, полный текст нужен только когда на документ смотрят.
+    Секретарь должен сверять цитату в проекте с исходным файлом —
+    без этого цитате нечего противопоставить.
+    """
+    service = CaseService(session)
+    if await service.get_case(case_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+
+    document = await service.documents.get(document_id)
+    if document is None or document.case_id != case_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Документ не найден"
+        )
+
+    base = _to_document_out(document)
+    return DocumentDetailOut(
+        **base.model_dump(),
+        text=document.text,
+        placeholders=list(dict.fromkeys(_PLACEHOLDER.findall(document.text)))[:50],
+    )
+
+
+@router.post(
+    "/{case_id}/documents/upload",
+    response_model=DocumentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_document(
+    request: Request,
+    case_id: uuid.UUID,
+    file: Annotated[UploadFile, File(description="Файл материала дела")],
+    session: SessionDep,
+) -> DocumentOut:
+    """POST /api/cases/{id}/documents/upload — загрузить файл (drag&drop).
+
+    Каждая ошибка — это действие, а не код: интерфейс показывает
+    сообщение дословно, поэтому текст писался для человека, которому
+    всё это безразлично и непонятно.
+    """
+    service = CaseService(session)
+    if await service.get_case(case_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+
+    # Настройки приложения, а не глобальный кэш get_settings(): лимит
+    # размера обязан совпадать с тем, что видит это приложение (в тестах
+    # там лимит 0 МБ, в запуске — MAX_UPLOAD_MB из окружения).
+    cfg = request.app.state.settings
+    filename = (file.filename or "").strip()[:500] or "документ.txt"
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix not in _ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=(
+                f"Файл «{filename}» не открывается: этот формат не поддерживается. "
+                "Нужен PDF, Word (docx), текстовый файл (txt, md), HTML или JSON."
+            ),
+        )
+
+    # На байт больше лимита — уже ошибка: читаем лимит+1 и проверяем.
+    data = await file.read(cfg.max_upload_bytes + 1)
+    if len(data) > cfg.max_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=(
+                f"Файл «{filename}» больше {cfg.max_upload_mb} МБ. "
+                "Разделите его на части или уберите из него картинки."
+            ),
+        )
+    if not data:
+        raise HTTPException(
+            status_code=HTTP_422, detail=f"Файл «{filename}» пустой — читать нечего."
+        )
+
+    # Дубль проверяется внутри дела: один и тот же документ законно
+    # встречается в разных делах (см. DocumentRepository.find_by_sha256).
+    digest = hashlib.sha256(data).hexdigest()
+    existing = await service.documents.find_by_sha256(digest, case_id=case_id)
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Такой файл уже есть в деле: {existing.filename}.",
+        )
+
+    from app.ingestion.pipeline import IngestionError, ingest_document
+
+    try:
+        result = await ingest_document(
+            session, case_id, filename, data, settings=cfg, actor="ui"
+        )
+    except IngestionError as exc:
+        # Текст не извлекся (скан без текстового слоя, битый файл) —
+        # документ не создаётся, чтобы пустышка не выглядела загруженной.
+        raise HTTPException(status_code=HTTP_422, detail=str(exc)) from exc
+
+    document = await service.documents.get(result.document_id)
+    if document is None:  # pragma: no cover - ingestion только что создал
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Документ записан, но не сохранился. Попробуйте ещё раз.",
+        )
+    return _to_document_out(document)
+
+
 @router.post(
     "/{case_id}/documents",
     response_model=DocumentOut,
@@ -199,8 +333,6 @@ async def register_document(
     принимаются метаданные и текст: этого достаточно, чтобы отработал
     путь «дело → документ → чанки» без бинарной загрузки.
     """
-    import hashlib
-
     service = CaseService(session)
     if await service.get_case(case_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")

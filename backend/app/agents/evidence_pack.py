@@ -193,13 +193,31 @@ def _sentences(text: str) -> list[str]:
     «в размере 150000 руб.» — 22 символа, и при пороге 25 эта строка
     молча выпадала из пакета вместе с суммой. Резолютивная часть
     оказывалась без суммы при полном пакете доказательств.
+
+    Границы фраз не должны резать высказывание посередине. Наивный
+    split резал после «ст.» и после номера пункта, цитата в проекте
+    решения начиналась с «56 ГПК РФ каждая сторона…», а начало
+    «Согласно ст.» уходило в другой фрагмент — владелец дел увидел
+    это как «ерунду в тексте». Плюс одиночный перевод строки в файлах
+    — это перенос строки, а не конец фразы.
     """
-    parts = re.split(r"(?<=[.;])\s+|\n+", text)
-    kept: list[str] = []
+    # Перенос строки внутри абзаца склеиваем; двойной перевод
+    # (граница абзаца) остаётся границей фразы.
+    text = re.sub(r"(?<![.!?…:])\n(?!\n)", " ", text)
+
+    parts = re.split(r"(?<=[.;!?…])\s+|\n+", text)
+    merged: list[str] = []
     for part in parts:
         candidate = part.strip()
         if not candidate:
             continue
+        if merged and _continues_after(merged[-1]):
+            merged[-1] = f"{merged[-1]} {candidate}"
+        else:
+            merged.append(candidate)
+
+    kept: list[str] = []
+    for candidate in merged:
         if len(candidate) > 25:
             kept.append(candidate)
         elif _carries_critical_data(candidate):
@@ -207,6 +225,24 @@ def _sentences(text: str) -> list[str]:
             # нельзя терять.
             kept.append(candidate)
     return kept
+
+
+# Сокращения, после которых точка не заканчивает фразу. Разбор без
+# этого правила обрезал цитаты посередине (см. _sentences).
+_NOT_A_BREAK = re.compile(
+    r"(?:^|[\s(«])"
+    r"(?:ст|ч|пп|п|абз|подп|гр|ул|пер|им|тт|рис|стр|лит|обр|др|напр|"
+    r"т\.к|т\.е|т\.д|т\.п|и\.о|г|гг|пр)"
+    r"\.$",
+    re.IGNORECASE,
+)
+# Номер пункта списка: «1.» — не предложение.
+_LIST_MARKER = re.compile(r"^\d{1,3}[.)]$")
+
+
+def _continues_after(previous: str) -> bool:
+    """Правда ли, что предыдущий фрагмент кончился не на границе фразы."""
+    return bool(_NOT_A_BREAK.search(previous) or _LIST_MARKER.match(previous))
 
 
 # Признаки того, что короткая фраза не может быть отброшена.

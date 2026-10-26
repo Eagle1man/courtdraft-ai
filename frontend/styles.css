@@ -1,38 +1,40 @@
-/* Интерфейс помощника судьи.
+/* Интерфейс помощника судьи — светлая премиальная тема.
  *
- * Оформление подчинено одной задаче: человек должен безошибочно отличать
- * текст, сгенерированный машиной, от проверенного и утверждённого.
- * Пометка «требует проверки» видна сразу, а весь текст акта визуально
- * приглушён.
+ * Оформление подчинено одной задаче: судья и секретарь не разбираются
+ * в IT, поэтому интерфейс обязан читаться без инструкции:
+ *   — статусы названы словами («Проект готов», «Нужна проверки»),
+ *     коды данных (DRAFT_READY, REVIEW_REQUIRED) не показываются;
+ *   — шаги сверху отвечают на вопрос «где я и что дальше»;
+ *   — ошибки говорят, что делать, а не какой HTTP-код вернулся;
+ *   — замечания проверки видны прямо в тексте раздела, красным или
+ *     янтарным, — их нельзя не заметить при беглом чтении.
  *
- * Стиль — по дизайн-системе LawLink v4 («墨案»): чернильно-синий + бирюза,
- * волосяные границы, мягкие тени, «хребет» дела слева. Дисциплина цвета:
- * бирюза — бренд и активное действие; зелёный — завершено/чисто;
- * янтарь — требует проверки (MEDIUM); красный — риск (HIGH/CRITICAL);
- * бронза — источники и архивные версии.
+ * Дисциплина цвета: бирюза — бренд и активное действие; зелёный —
+ * готово/чисто; янтарь — требует проверки; красный — риск; бронза —
+ * источники; серый — нейтральное.
  *
- * Без сборки: обычный CSS и ES2020, никакого npm. Для интерфейса на одну
- * страницу сборщик — лишняя зависимость и лишний день настройки.
+ * Без сборки: обычный CSS и ES2020, никакого npm. Для интерфейса на
+ * одну страницу сборщик — лишняя зависимость и лишний день настройки.
  */
 
 :root {
   /* Холст и поверхности */
-  --bg-canvas: #f2f4f3;
-  --bg-card: #ffffff;
-  --bg-hover: #f1f4f2;
-  --bg-sunken: #e9edeb;
-  --bg-tint: #e9f2f1;
+  --bg: #f4f6f5;
+  --card: #fff;
+  --sunk: #f8faf9;
+  --line: #e8ecea;
+  --line2: #dde3e0;
+  --hover: #f7f9f8;
 
   /* Чернильный текст */
   --ink: #0c1927;
-  --ink-2: #414e5a;
+  --ink2: #414e5a;
   --muted: #68747f;
   --faint: #98a3ad;
 
   /* Бренд */
   --teal: #007b7f;
   --teal-h: #006367;
-  --teal-deep: #005054;
   --teal-soft: #e4f1f0;
   --teal-line: #b7d8d6;
   --navy: #10233a;
@@ -50,261 +52,433 @@
   --red: #b42318;
   --red-bg: #fbece9;
   --red-line: #f0c6bf;
-  --slate: #4a5560;
   --slate-bg: #eef1f0;
-  --slate-line: #d8dedc;
 
-  /* Границы и тени */
-  --bd-hair: #e8ecea;
-  --bd-subtle: #dde3e0;
-  --bd-default: #cfd7d3;
-  --bd-strong: #b4bfb9;
-  --sh-card: 0 1px 2px rgba(12, 25, 39, 0.05);
-  --sh-hover: 0 6px 16px -4px rgba(12, 25, 39, 0.1), 0 2px 4px rgba(12, 25, 39, 0.04);
-  --sh-pop: 0 12px 32px -8px rgba(12, 25, 39, 0.16), 0 4px 8px -2px rgba(12, 25, 39, 0.06);
+  /* Тени и радиусы */
+  --sh: 0 1px 2px rgba(12, 25, 39, 0.05);
+  --sh2: 0 6px 18px -6px rgba(12, 25, 39, 0.12), 0 2px 4px rgba(12, 25, 39, 0.04);
+  --r: 12px;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
-    "Helvetica Neue", system-ui, sans-serif;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-full: 9800px;
+  --f: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.55;
-  letter-spacing: -0.004em;
+  background: var(--bg);
   color: var(--ink);
-  background: var(--bg-canvas);
+  font: 15px/1.6 var(--f);
   -webkit-font-smoothing: antialiased;
 }
 
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 20px; }
+
+.muted { color: var(--muted); font-size: 13px; }
+.small { font-size: 12px; }
 
 /* ── Шапка ─────────────────────────────────────────────────────── */
 
 .top {
   background: linear-gradient(150deg, #16304c 0%, var(--navy) 55%, #0c1927 100%);
   color: #fff;
-  padding: 15px 0;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), var(--sh-card);
+  padding: 14px 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), var(--sh);
 }
 
-.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.top .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
 
 .brand { display: flex; align-items: center; gap: 12px; }
 
-/* Фирменный знак: тёмный скруглённый квадрат с бирюзовой полоской —
- * как в LawLink, чтобы шапка читалась как продукт, а не как заголовок. */
 .brand .mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 19px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .brand h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -0.012em; }
+.brand .sub { margin: 2px 0 0; font-size: 12.5px; color: rgba(255, 255, 255, 0.66); }
 
-.brand .sub { margin: 2px 0 0; font-size: 12px; color: rgba(255, 255, 255, 0.66); }
+.hdr-right { display: flex; align-items: center; gap: 10px; }
 
-.status { font-size: 12.5px; color: rgba(255, 255, 255, 0.78); text-align: right; }
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 6px 12px;
+  border-radius: 9800px;
+}
 
-/* Ссылки шапки переносятся целиком, а не посреди слова (п. 10). */
-.status a { white-space: nowrap; color: #9fd8d6; }
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.22);
+}
 
-/* ── Предупреждение о статусе текста ──────────────────────────── */
+/* Нет связи: красная точка и словами, без кодов. */
+.dot.off {
+  background: #f87171;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.22);
+}
+
+.ver { font-size: 12px; color: rgba(255, 255, 255, 0.5); }
+
+/* Кнопка «?» — помощь по любому непонятному месту. */
+.q {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.q:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* Панель помощи: отвечает на вопросы новичка, без терминов. */
+.help {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  box-shadow: var(--sh);
+}
+
+.help .wrap { padding-top: 14px; padding-bottom: 14px; }
+
+.help h3 { margin: 0 0 8px; font-size: 15px; }
+
+.help ol { margin: 0; padding-left: 22px; }
+.help li { margin: 4px 0; font-size: 14px; color: var(--ink2); }
+.help .close { margin-top: 8px; }
+
+/* ── Полосы-напоминания ────────────────────────────────────────── */
 
 .notice {
   background: var(--amber-bg);
   border-bottom: 1px solid var(--amber-line);
-  padding: 10px 20px;
-  font-size: 13px;
-  color: #5b4409;
+  color: #6b4708;
+  font-size: 13.5px;
+  padding: 9px 0;
 }
 
-.notice strong { color: var(--red); }
+.notice .wrap { display: flex; align-items: center; gap: 9px; }
+.notice strong { font-weight: 650; }
 
-/*
- * Баннер демонстрационного режима. Отдельный цвет нужен, чтобы его не
- * спутали с постоянным напоминанием «это проект, а не решение суда»:
- * то сообщение действует всегда, это — про состояние машины.
- */
+/* Баннер демонстрационного режима — другая тема, чтобы его не
+ * спутали с постоянным напоминанием «это проект, а не решение». */
 .notice.demo-banner {
   background: var(--teal-soft);
   border-bottom: 1px solid var(--teal-line);
-  color: var(--teal-deep);
+  color: var(--teal-h);
 }
 
-.notice.demo-banner strong { color: var(--teal-deep); }
+/* ── Шаги ──────────────────────────────────────────────────────── */
 
-/* ── Компоновка ───────────────────────────────────────────────── */
+.steps {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 18px 0 14px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 9800px;
+  padding: 7px 14px 7px 8px;
+  font-size: 13.5px;
+  color: var(--ink2);
+  box-shadow: var(--sh);
+}
+
+.step .n {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--slate-bg);
+  color: var(--muted);
+  border: 1px solid var(--line2);
+}
+
+.step.done .n { background: var(--green-bg); color: var(--green); border-color: var(--green-line); }
+.step.now { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-h); font-weight: 650; }
+.step.now .n { background: var(--teal); color: #fff; border-color: var(--teal); }
+.arrow { color: var(--faint); font-size: 13px; }
+
+/* ── Сетка ─────────────────────────────────────────────────────── */
 
 .layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 20px;
+  grid-template-columns: 330px 1fr;
+  gap: 18px;
   align-items: start;
-  padding-top: 22px;
-  padding-bottom: 44px;
+  padding-bottom: 28px;
 }
 
-@media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; }
-}
+.col { display: flex; flex-direction: column; gap: 18px; }
 
-/* Панель = карточка LawLink: белая, волосяная граница, мягкая тень. */
 .panel {
-  background: var(--bg-card);
-  border: 1px solid var(--bd-hair);
-  border-radius: var(--r-lg);
-  padding: 18px;
-  box-shadow: var(--sh-card);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--sh);
 }
 
-.panel h2 {
-  margin: 0 0 12px;
-  font-size: 11px;
-  font-weight: 650;
+.panel .pad { padding: 16px; }
+
+.label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
   color: var(--faint);
+  margin: 0 0 10px;
 }
 
-.mt { margin-top: 22px !important; }
+h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 
-.muted { color: var(--muted); font-size: 13px; }
-.small { font-size: 12px; }
-
-/* ── Списки ───────────────────────────────────────────────────── */
-
-.case-list, .doc-list, .issues, .sources ul, .versions ul {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-}
-
-.case-list li, .doc-list li {
-  position: relative;
-  padding: 9px 10px 9px 12px;
-  border: 1px solid transparent;
-  border-radius: var(--r-md);
-  cursor: pointer;
-  font-size: 13.5px;
-  color: var(--ink-2);
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.case-list li:hover, .doc-list li:hover { background: var(--bg-hover); }
-
-/* Выбранное дело: «хребет» слева (spine) + бирюзовая подложка. */
-.case-list li.active {
-  background: var(--teal-soft);
-  border-color: var(--teal-line);
-  color: var(--teal-deep);
-  font-weight: 600;
-}
-
-.case-list li.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--teal);
-}
-
-.doc-list li { cursor: default; font-size: 13px; }
-
-.doc-list .type {
-  display: inline-block;
-  min-width: 84px;
-  margin-right: 6px;
-  font-size: 10.5px;
-  font-weight: 650;
-  color: var(--faint);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  /* Метка не сливается с названием файла и на телефоне ломается
-   * по словам, а не посреди (п. 10 разбора). */
-  overflow-wrap: anywhere;
-}
-
-/* ── Кнопки ───────────────────────────────────────────────────── */
+/* ── Кнопки ────────────────────────────────────────────────────── */
 
 .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   font: inherit;
-  font-size: 13px;
-  font-weight: 550;
-  padding: 8px 15px;
-  border: 1px solid var(--bd-default);
-  border-radius: var(--r-md);
-  background: var(--bg-card);
+  font-weight: 600;
+  border-radius: 9px;
+  padding: 9px 15px;
+  border: 1px solid var(--line2);
+  background: #fff;
   color: var(--ink);
   cursor: pointer;
-  box-shadow: var(--sh-card);
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: var(--sh);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  transition: background 0.12s, border-color 0.12s;
   white-space: nowrap;
 }
 
-.btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--bd-strong); }
+.btn:hover:not(:disabled) { background: var(--hover); }
 
-/* Главное действие — бирюза (дисциплина LawLink: teal = активное действие). */
 .btn.primary {
   background: var(--teal);
-  border-color: var(--teal);
+  border-color: var(--teal-h);
   color: #fff;
-  box-shadow: 0 1px 2px rgba(0, 80, 84, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 99, 103, 0.35), 0 4px 12px -6px rgba(0, 123, 127, 0.5);
 }
 
-.btn.primary:hover:not(:disabled) { background: var(--teal-h); border-color: var(--teal-h); }
+.btn.primary:hover:not(:disabled) { background: var(--teal-h); }
 
 .btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
-
 .btn.full { width: 100%; }
 
-.head-row {
+/* ── Чипы статусов ─────────────────────────────────────────────── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 9800px;
+  border: 1px solid;
+}
+
+.chip.amber { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-line); }
+.chip.green { background: var(--green-bg); color: var(--green); border-color: var(--green-line); }
+.chip.red { background: var(--red-bg); color: var(--red); border-color: var(--red-line); }
+.chip.teal { background: var(--teal-soft); color: var(--teal); border-color: var(--teal-line); }
+.chip.bronze { background: var(--bronze-bg); color: var(--bronze); border-color: var(--bronze-line); }
+.chip.grey { background: var(--slate-bg); color: var(--ink2); border-color: var(--line2); }
+
+/* ── Дела ──────────────────────────────────────────────────────── */
+
+.cases { display: flex; flex-direction: column; gap: 9px; margin-bottom: 6px; }
+
+.case {
+  border: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.case:hover { background: var(--hover); box-shadow: var(--sh2); }
+.case.sel { border-left-color: var(--teal); border-color: var(--teal-line); background: var(--teal-soft); }
+.case .num { font-weight: 680; font-size: 14.5px; letter-spacing: -0.01em; }
+.case .court { font-size: 13px; color: var(--muted); margin: 2px 0 8px; word-break: break-word; }
+.case .row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── Зона загрузки файлов ──────────────────────────────────────── */
+
+.drop {
+  border: 2px dashed var(--teal-line);
+  background: #f7fbfa;
+  border-radius: 11px;
+  padding: 16px 12px;
+  text-align: center;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.drop:hover, .drop.over { background: var(--teal-soft); border-color: var(--teal); }
+.drop.busy { opacity: 0.6; cursor: progress; }
+.drop .ic { font-size: 22px; }
+.drop .t { font-weight: 650; font-size: 14px; margin-top: 4px; }
+.drop .h { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+/* ── Материалы дела ────────────────────────────────────────────── */
+
+.docs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+
+.doc {
   display: flex;
+  gap: 10px;
   align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 11px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.doc:hover { box-shadow: var(--sh2); }
+
+.fic {
+  width: 30px;
+  height: 34px;
+  flex: none;
+  border-radius: 5px;
+  background: var(--slate-bg);
+  border: 1px solid var(--line2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+.doc .nm { font-weight: 600; font-size: 13.5px; word-break: break-all; }
+
+.doc .meta {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
+.kind {
+  display: inline-flex;
+  font-size: 11.5px;
+  font-weight: 650;
+  padding: 1px 8px;
+  border-radius: 9800px;
+  background: var(--slate-bg);
+  border: 1px solid var(--line2);
+  color: var(--ink2);
+}
+
+/* Метка «в файле скрыты личные данные» — показать, не читая файл. */
+.warnline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--amber);
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-line);
+  border-radius: 7px;
+  padding: 3px 7px;
+  margin-top: 6px;
+}
+
+/* ── Главная панель ────────────────────────────────────────────── */
+
+.panel.main { min-width: 0; }
+
+.head {
+  display: flex;
   justify-content: space-between;
   gap: 16px;
+  align-items: flex-start;
+  padding: 18px 20px 0;
 }
 
-.head-row h2 {
-  margin: 0 0 4px;
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.015em;
-  text-transform: none;
-  color: var(--ink);
+.head h2 { font-size: 20px; letter-spacing: -0.015em; }
+
+.head-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 13.5px;
 }
 
-.head-row p { margin: 0; }
+.tools { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
 
-/* ── Прогресс ─────────────────────────────────────────────────── */
+/* ── Счётчики ──────────────────────────────────────────────────── */
 
-.progress { margin: 18px 0; }
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 16px 20px 4px;
+}
+
+.metric {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--sunk);
+  padding: 12px 13px;
+}
+
+.metric .k { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.metric .v { font-size: 23px; font-weight: 700; letter-spacing: -0.02em; margin-top: 3px; }
+.metric .v small { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.metric.alert { background: var(--red-bg); border-color: var(--red-line); }
+.metric.alert .v { color: var(--red); }
+.metric.alert .k { color: #8d1c13; }
+
+/* ── Прогресс и сообщения ─────────────────────────────────────── */
+
+.progress { margin: 16px 20px 0; }
 
 .progress .bar {
-  height: 5px;
-  background: var(--bg-sunken);
-  border-radius: var(--r-full);
+  height: 6px;
+  background: var(--slate-bg);
+  border-radius: 9800px;
   overflow: hidden;
 }
 
@@ -312,7 +486,7 @@ body {
   height: 100%;
   width: 0;
   background: var(--teal);
-  border-radius: var(--r-full);
+  border-radius: 9800px;
   transition: width 0.6s ease;
 }
 
@@ -323,267 +497,175 @@ body {
   50% { opacity: 0.35; }
 }
 
+.progress p { margin: 8px 0 0; }
+
 .alert {
-  margin: 16px 0;
-  padding: 10px 13px;
-  border-radius: var(--r-md);
-  font-size: 13px;
+  margin: 14px 20px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  font-size: 13.5px;
   background: var(--red-bg);
   border: 1px solid var(--red-line);
-  color: var(--red);
+  color: #8d1c13;
 }
 
 .alert.ok { background: var(--green-bg); border-color: var(--green-line); color: var(--green); }
 
-/* ── Проверка ─────────────────────────────────────────────────── */
+/* ── Результат проверки ────────────────────────────────────────── */
 
-.verification {
-  margin: 18px 0;
-  padding: 14px;
-  border: 1px solid var(--bd-hair);
-  border-radius: var(--r-lg);
-  background: var(--bg-card);
-  box-shadow: var(--sh-card);
+.verify {
+  margin: 14px 20px 0;
+  border: 1px solid var(--amber-line);
+  background: var(--amber-bg);
+  border-radius: 11px;
+  padding: 11px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  color: #6b4708;
 }
 
-.verification h3 {
-  margin: 0 0 10px;
-  font-size: 11px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--faint);
+.verify.ok { border-color: var(--green-line); background: var(--green-bg); color: var(--green); }
+.verify.bad { border-color: var(--red-line); background: var(--red-bg); color: #8d1c13; }
+
+/* ── Разделы проекта ───────────────────────────────────────────── */
+
+.sections { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 11px; }
+
+.sec {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: var(--sh);
 }
 
-/* Вердикт — пилюля в духе badge LawLink: рамка + точка-индикатор. */
-.verdict {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: var(--r-full);
-  font-size: 12.5px;
-  font-weight: 600;
-  border: 1px solid transparent;
-}
-
-.verdict::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.8;
-}
-
-.verdict.review { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-line); }
-.verdict.pass { background: var(--green-bg); color: var(--green); border-color: var(--green-line); }
-
-.issues { margin-top: 12px; }
-
-/* Замечание: цветной «хребет» слева — красный у HIGH/CRITICAL,
- * янтарный у MEDIUM; читается боковым зрением. */
-.issues li {
-  position: relative;
-  padding: 9px 11px 9px 13px;
-  margin-bottom: 7px;
-  border-left: 3px solid var(--slate-line);
-  background: var(--bg-card);
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  border-top: 1px solid var(--bd-hair);
-  border-right: 1px solid var(--bd-hair);
-  border-bottom: 1px solid var(--bd-hair);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.issues li.CRITICAL, .issues li.HIGH { border-left-color: var(--red); }
-.issues li.MEDIUM { border-left-color: var(--amber); }
-.issues li.LOW { border-left-color: var(--bd-strong); }
-
-/* Строка «где»: точка-индикатор цвета важности. */
-.issues .where {
+.sec .sh {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 3px;
-  color: var(--muted);
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sunk);
 }
 
-.issues .where::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--slate-line);
-  flex-shrink: 0;
+.sec .no {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 7px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-weight: 700;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--teal-line);
 }
 
-.issues li.CRITICAL .where, .issues li.HIGH .where { color: var(--red); }
-.issues li.CRITICAL .where::before, .issues li.HIGH .where::before { background: var(--red); }
-.issues li.MEDIUM .where { color: var(--amber); }
-.issues li.MEDIUM .where::before { background: var(--amber); }
+.sec .st { font-weight: 650; font-size: 15px; letter-spacing: -0.01em; flex: 1; min-width: 0; }
 
-.issues .why { color: var(--ink-2); }
+.sec .body { padding: 13px 16px; font-size: 15px; line-height: 1.75; color: #2a3743; }
+.sec .body .txt { white-space: pre-wrap; }
 
-.issues .quote {
+/* Заглушка (демо-режим без модели): текст приглушён и помечен. */
+.sec.stub .body { color: #5d6a75; font-style: italic; }
+
+/* Замечание проверки: цветной «хребет» слева читается боковым
+ * зрением — красное нельзя не заметить. */
+.remark {
+  border-left: 3px solid var(--red);
+  background: var(--red-bg);
+  border-radius: 0 8px 8px 0;
+  padding: 9px 12px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #8d1c13;
+}
+
+.remark.a { border-left-color: var(--amber); background: var(--amber-bg); color: #6b4708; }
+.remark b { font-weight: 700; }
+
+.remark .frag {
   display: block;
   margin-top: 5px;
   padding: 5px 8px;
-  background: var(--bg-sunken);
-  border-radius: var(--r-sm);
-  font-size: 12px;
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  font-size: 12.5px;
   white-space: pre-wrap;
-  max-height: 4.5em;
-  overflow: hidden;
-  transition: max-height 0.2s ease;
 }
 
-/* Находка кликабельна: цитата обрезана до четырёх строк, полный
- * фрагмент раскрывается по клику, раздел подсвечивается бирюзой. */
-.issues li.has-quote { cursor: pointer; }
-
-.issues li.has-quote:hover { background: var(--bg-hover); }
-
-.issues li.open .quote { max-height: none; }
-
-/* Подсказка в строке «где»: появляется на наведении, меняется при открытии. */
-.issues li.has-quote .where::after {
-  content: "показать фрагмент";
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  color: var(--teal-deep);
-  opacity: 0;
-  transition: opacity 0.12s;
+/* Источники раздела — бронзовый «архивный» тон. */
+.cites {
+  margin-top: 12px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line2);
+  font-size: 12.5px;
+  color: var(--bronze);
+  background: transparent;
+  word-break: break-word;
 }
-
-.issues li.has-quote:hover .where::after { opacity: 0.85; }
-
-.issues li.open .where::after { content: "свернуть"; opacity: 0.85; }
-
-/* Короткая вспышка на раздел, из которого взята находка. */
-.section.flash { box-shadow: 0 0 0 2px var(--teal-line), var(--sh-card); }
-
-/* ── Разделы проекта ──────────────────────────────────────────── */
-
-.sections { margin-top: 20px; }
-
-.section {
-  margin-bottom: 16px;
-  border: 1px solid var(--bd-hair);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  background: var(--bg-card);
-  box-shadow: var(--sh-card);
-}
-
-.section > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--bd-hair);
-}
-
-.section h4 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -0.008em; }
-
-.section .body {
-  padding: 14px;
-  white-space: pre-wrap;
-  font-size: 14px;
-  line-height: 1.68;
-  color: var(--ink-2);
-}
-
-/* Раздел, помеченный как требующий проверки, виден сразу — иначе
- * пометку прочитают только те, кто догадается посмотреть. */
-.section.flagged > header { background: var(--amber-bg); border-bottom-color: var(--amber-line); }
-
-.section.flagged { border-color: var(--amber-line); }
-
-/* Замечания, нарисованные внутри раздела: прижаты к тексту, но не
- * теряются в нём — читаются между телом раздела и источниками. */
-.section .issues { margin: 0 14px 12px; }
 
 /* Замечания, которые проверка не привязала к разделу. */
-.unsectioned { margin-top: 14px; }
+.unsectioned { display: flex; flex-direction: column; gap: 8px; }
 
-/* Бейджи — пилюли LawLink (рамка + заливка). */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 550;
-  padding: 2px 9px;
-  border-radius: var(--r-full);
-  border: 1px solid transparent;
-  white-space: nowrap;
-  line-height: 1.6;
+/* ── Источники, версии, правка — сворачиваемые блоки ───────────── */
+
+.details-box {
+  margin: 4px 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--sunk);
+  padding: 4px 14px 10px;
 }
 
-.badge.review { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-line); }
-.badge.mock { background: var(--slate-bg); color: var(--slate); border-color: var(--slate-line); }
-.badge.source { background: var(--teal-soft); color: var(--teal-deep); border-color: var(--teal-line); }
-
-/* Источники — бронзовый «архивный» тон (дисциплина LawLink). */
-.citations {
-  padding: 8px 14px;
-  border-top: 1px dashed var(--bd-hair);
-  font-size: 12px;
-  color: var(--bronze);
-  background: var(--bronze-bg);
-}
-
-/* ── Источники и версии ──────────────────────────────────────── */
-
-details { margin-top: 18px; }
-
-summary {
+.details-box summary {
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--teal-deep);
-  padding: 8px 0;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--teal-h);
+  padding: 9px 0;
 }
 
-summary:hover { color: var(--teal); }
+.details-box summary:hover { color: var(--teal); }
 
-details ul li {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--bd-hair);
+.details-box ul { list-style: none; margin: 4px 0; padding: 0; }
+
+.details-box ul li {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
   font-size: 13px;
+  color: var(--ink2);
+  word-break: break-word;
 }
 
-details ul li:last-child { border-bottom: none; }
+.details-box ul li:last-child { border-bottom: none; }
 
-.v-current { font-weight: 600; color: var(--teal-deep); }
+.v-current { font-weight: 650; color: var(--teal-h); }
 
-/* ── Редактор ────────────────────────────────────────────────── */
-
-.editor textarea, .editor input, .editor select {
+.editor select,
+.editor input,
+.editor textarea {
   width: 100%;
   font: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   padding: 8px 11px;
-  border: 1px solid var(--bd-default);
-  border-radius: var(--r-md);
+  border: 1px solid var(--line2);
+  border-radius: 9px;
   margin-bottom: 9px;
-  background: var(--bg-card);
+  background: #fff;
   color: var(--ink);
   box-shadow: inset 0 1px 2px rgba(12, 25, 39, 0.05);
 }
 
-.editor textarea:focus, .editor input:focus, .editor select:focus {
+.editor select:focus,
+.editor input:focus,
+.editor textarea:focus {
   outline: none;
   border-color: var(--teal);
   box-shadow: 0 0 0 3px rgba(0, 123, 127, 0.12);
@@ -593,18 +675,132 @@ details ul li:last-child { border-bottom: none; }
   font-family: "Consolas", "Courier New", monospace;
   font-size: 12.5px;
   line-height: 1.55;
+  min-height: 200px;
 }
 
-.foot {
-  padding: 18px 20px 30px;
-  font-size: 12px;
+/* ── Просмотр документа ────────────────────────────────────────── */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 25, 39, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.modal-card {
+  background: #fff;
+  border-radius: var(--r);
+  box-shadow: 0 24px 64px -16px rgba(12, 25, 39, 0.35);
+  width: min(880px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-head h3 { margin: 0; font-size: 16px; word-break: break-all; }
+.modal-head p { margin: 3px 0 0; }
+
+.modal-body {
+  padding: 16px 18px;
+  overflow: auto;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: #2a3743;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Скрытое значение (личные данные): «заштрихованная» метка. */
+.hidden-val {
+  background: repeating-linear-gradient(45deg, #faf0db, #faf0db 6px, #f5e6c6 6px, #f5e6c6 12px);
+  border-bottom: 2px dotted var(--amber);
+  padding: 0 3px;
+  border-radius: 3px;
+  font-weight: 650;
+  color: #6b4b08;
+}
+
+/* ── Подвал ────────────────────────────────────────────────────── */
+
+footer {
+  border-top: 1px solid var(--line);
+  background: #fff;
+  padding: 16px 0;
   color: var(--muted);
-  border-top: 1px solid var(--bd-hair);
+  font-size: 13.5px;
 }
 
-/* ── Полоса прокрутки ────────────────────────────────────────── */
+footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* ── Полоса прокрутки ──────────────────────────────────────────── */
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--bd-default); border-radius: 5px; border: 2px solid var(--bg-canvas); }
-::-webkit-scrollbar-thumb:hover { background: var(--bd-strong); }
+::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 5px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+
+/* ── Форма создания дела ──────────────────────────────────────── */
+
+.case-form {
+  margin: 10px 0 4px;
+  padding: 12px;
+  border: 1px solid var(--teal-line);
+  background: var(--teal-soft);
+  border-radius: 11px;
+}
+
+.case-form input {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 11px;
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+  margin-bottom: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.case-form input:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(0, 123, 127, 0.12);
+}
+
+.case-form-btns { display: flex; flex-direction: column; gap: 7px; }
+
+/* Второстепенная кнопка: не спорит с главным действием. */
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-weight: 550;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.btn.ghost:hover { color: var(--teal-h); background: var(--hover); }
+
+/* ── Узкие экраны ──────────────────────────────────────────────── */
+
+@media (max-width: 960px) {
+  .layout { grid-template-columns: 1fr; }
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .head { flex-direction: column; }
+  .tools { justify-content: flex-start; }
+}

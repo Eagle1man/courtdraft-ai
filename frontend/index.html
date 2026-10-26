@@ -13,17 +13,20 @@
   работает». При смене версии приложения метка меняется здесь же —
   иначе статику придётся чистить вручную у каждого зрителя.
 -->
-<link rel="stylesheet" href="styles.css?v=0.2.0">
+<link rel="stylesheet" href="styles.css?v=0.3.0">
 </head>
 <body>
 
 <!--
   Интерфейс помощника судьи.
 
-  Главное правило продукта вынесено в шапку и повторяется у каждого блока
-  с текстом акта: система готовит ПРОЕКТ, решение принимает человек.
-  Это не украшение — без повторного напоминания текст модели легко принять
-  за готовый акт.
+  Главное правило продукта — в шапке и в напоминании под ним: система
+  готовит ПРОЕКТ, решение принимает человек.
+
+  Второе правило — аудитория: секретарь и судья не разбираются в IT.
+  Поэтому в тексте интерфейса нет ни одного технического термина:
+  статусы названы словами, ошибки говорят, что делать, а шаги сверху
+  показывают, где пользователь находится.
 -->
 
 <header class="top">
@@ -35,109 +38,208 @@
         <p class="sub">Подготовка проекта судебного решения по материалам дела</p>
       </div>
     </div>
-    <div class="status" id="health">проверка связи…</div>
+    <div class="hdr-right">
+      <span class="conn" id="conn" title="Программа работает на этом компьютере">
+        <span class="dot" id="health-dot"></span><span id="health">проверка связи…</span>
+      </span>
+      <span class="ver" id="app-ver"></span>
+      <button class="q" id="btn-help" title="Как пользоваться программой">?</button>
+    </div>
   </div>
 </header>
 
-<div class="notice demo-banner" id="demo-banner" hidden></div>
-
-<div class="notice" id="disclaimer">
-  <strong>Это проект, а не решение суда.</strong>
-  Проверка и принятие решения — за судьёй. Любое утверждение без ссылки
-  на материалы дела помечено как требующее проверки.
+<!-- Помощь: четыре шага простыми словами, без единого термина. -->
+<div class="help" id="help" hidden>
+  <div class="wrap">
+    <h3>Как пользоваться программой</h3>
+    <ol>
+      <li>Слева выберите дело — или создайте новое (кнопка «Создать дело»).</li>
+      <li>Перетащите документы дела в окно «Перетащите документы сюда» — можно несколько файлов сразу.</li>
+      <li>Нажмите «Сформировать проект» и подождите две-три минуты.</li>
+      <li>Прочитайте проект: красные и жёлтые пометки — то, что требует вашей проверки.
+        Спорное можно открыть рядом с исходным документом. Подписываете решение только вы.</li>
+    </ol>
+    <button class="btn close" id="help-close">Понятно, закрыть</button>
+  </div>
 </div>
 
-<main class="wrap layout">
+<div class="notice demo-banner" id="demo-banner" hidden></div>
 
-  <!-- ── Список дел ─────────────────────────────────────── -->
-  <aside class="panel">
-    <h2>Дела</h2>
-    <button class="btn primary full" id="btn-new-case">Создать демо-дело</button>
-    <ul class="case-list" id="case-list">
-      <li class="muted">Загрузка…</li>
-    </ul>
+<div class="notice">
+  <div class="wrap">
+    <span class="ic">ℹ</span>
+    <span><strong>Это проект, а не решение суда.</strong>
+    Проверяет и подписывает судья — программа только готовит текст.
+    Любое утверждение без ссылки на материалы дела помечено как требующее проверки.</span>
+  </div>
+</div>
 
-    <h2 class="mt">Материалы дела</h2>
-    <ul class="doc-list" id="doc-list">
-      <li class="muted">Дело не выбрано</li>
-    </ul>
-  </aside>
+<div class="wrap">
 
-  <!-- ── Проект ─────────────────────────────────────────── -->
-  <section class="panel main">
+  <!-- Шаги: где пользователь и что дальше. Считаются в app.js. -->
+  <nav class="steps" id="steps" aria-label="Порядок работы"></nav>
 
-    <div class="head-row">
-      <div>
-        <h2 id="draft-title">Проект не сформирован</h2>
-        <p class="muted" id="draft-meta">Выберите дело и нажмите «Сформировать проект».</p>
+  <div class="layout">
+
+    <!-- ═══ Левая колонка: дела и материалы ═══ -->
+    <div class="col">
+
+      <section class="panel">
+        <div class="pad">
+          <p class="label">Дела</p>
+          <button class="btn primary full" id="btn-new-case">＋ Создать дело</button>
+
+          <!-- Понятная форма из двух полей вместо технических запросов. -->
+          <form class="case-form" id="case-form" hidden>
+            <input type="text" id="case-number" maxlength="100"
+                   placeholder="Номер дела (например, 2-1234/2026)" required>
+            <input type="text" id="case-court" maxlength="300"
+                   placeholder="Кто рассматривает (суд, судья)" required>
+            <div class="case-form-btns">
+              <button type="submit" class="btn primary full">Создать дело</button>
+              <button type="button" class="btn full" id="case-form-cancel">Отмена</button>
+            </div>
+          </form>
+
+          <div class="cases" id="case-list">
+            <p class="muted">Загрузка…</p>
+          </div>
+
+          <button class="btn ghost full" id="btn-demo-case"
+                  title="Создать показочное дело с готовыми материалами">
+            или создать демонстрационное дело
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="pad">
+          <p class="label" id="docs-label">Материалы дела</p>
+
+          <div class="drop" id="dropzone" role="button" tabindex="0"
+               title="Нажмите или перетащите файлы мышью">
+            <div class="ic">📎</div>
+            <div class="t">Перетащите документы сюда</div>
+            <div class="h">или нажмите, чтобы выбрать файл<br>
+              PDF, Word, текст — до 50 МБ каждый</div>
+          </div>
+          <input type="file" id="file-input" multiple hidden
+                 accept=".txt,.md,.pdf,.docx,.html,.htm,.json">
+
+          <ul class="docs" id="doc-list">
+            <li class="muted">Дело не выбрано</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- ═══ Правая колонка: проект ═══ -->
+    <section class="panel main">
+
+      <div class="head">
+        <div>
+          <h2 id="draft-title">Проект не сформирован</h2>
+          <div class="head-meta">
+            <span class="chip grey" id="draft-status" hidden></span>
+            <span class="muted" id="draft-meta">Выберите дело и нажмите «Сформировать проект».</span>
+          </div>
+        </div>
+        <div class="tools">
+          <button class="btn" id="btn-download" hidden
+                  title="Скачать текст проекта отдельным файлом">⬇ Скачать текст</button>
+          <button class="btn primary" id="btn-generate" disabled>Сформировать проект</button>
+        </div>
       </div>
-      <button class="btn primary" id="btn-generate" disabled>
-        Сформировать проект
-      </button>
+
+      <div class="progress" id="progress" hidden>
+        <div class="bar"><div class="fill" id="progress-fill"></div></div>
+        <p class="muted" id="progress-text">Формирование…</p>
+      </div>
+
+      <div class="alert" id="alert" hidden></div>
+
+      <!-- Четыре счётчика: состояние проекта с одного взгляда. -->
+      <div class="metrics" id="metrics" hidden>
+        <div class="metric"><div class="k">Разделы</div>
+          <div class="v" id="m-sections">—</div></div>
+        <div class="metric" id="metric-issues"><div class="k">Замечания</div>
+          <div class="v" id="m-issues">—</div></div>
+        <div class="metric"><div class="k">Источники</div>
+          <div class="v" id="m-sources">—</div></div>
+        <div class="metric"><div class="k">Версии</div>
+          <div class="v" id="m-versions">—</div></div>
+      </div>
+
+      <!-- Результат проверки: вердикт одной строкой, список замечаний
+           рисуется внутри разделов, к которым они относятся. -->
+      <div class="verify" id="verification" hidden>
+        <span class="ic">⚠</span>
+        <span id="verdict"></span>
+      </div>
+
+      <div class="sections" id="sections">
+        <p class="muted">Разделы проекта появятся здесь.</p>
+      </div>
+
+      <!-- Источники и история версий — сворачиваемые блоки -->
+      <details class="details-box" id="sources" hidden>
+        <summary>Источники, использованные в проекте</summary>
+        <ul id="source-list"></ul>
+      </details>
+
+      <details class="details-box" id="versions" hidden>
+        <summary>История версий и правок</summary>
+        <ul id="version-list"></ul>
+        <p class="muted small">
+          История версий — рабочие материалы проекта: хранится каждая
+          редакция целиком с автором правки. Режим доступа к этой истории
+          и сроки хранения должны быть определены регламентом суда —
+          вопрос правовой квалификации, см. docs/legal-regime.md.
+        </p>
+      </details>
+
+      <!-- Правка -->
+      <details class="details-box editor" id="editor" hidden>
+        <summary>Внести правку вручную</summary>
+        <p class="muted small">
+          Текст сохраняется целиком как новая версия. Предыдущая версия
+          остаётся без изменений — так юридический акт можно показать
+          в том виде, в каком он был принят.
+        </p>
+        <select id="edit-author">
+          <option value="secretary">Правку внёс секретарь</option>
+          <option value="judge">Правку внёс судья</option>
+        </select>
+        <input type="text" id="edit-comment" placeholder="Комментарий к правке">
+        <textarea id="edit-text" rows="12"></textarea>
+        <button class="btn" id="btn-save-edit">Сохранить как новую версию</button>
+      </details>
+
+    </section>
+  </div>
+</div>
+
+<!-- Просмотр материала дела: сверка цитаты с исходным файлом. -->
+<div class="modal" id="doc-viewer" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <div>
+        <h3 id="doc-viewer-title">Документ</h3>
+        <p class="muted" id="doc-viewer-meta"></p>
+      </div>
+      <button class="btn" id="doc-viewer-close">✕ Закрыть</button>
     </div>
+    <div class="modal-body" id="doc-viewer-body"></div>
+  </div>
+</div>
 
-    <div class="progress" id="progress" hidden>
-      <div class="bar"><div class="fill" id="progress-fill"></div></div>
-      <p class="muted" id="progress-text">Формирование…</p>
-    </div>
-
-    <div class="alert" id="alert" hidden></div>
-
-    <!-- Результат проверки: вердикт и счётчики. Список замечаний
-         рисуется внутри разделов, к которым они относятся — замечание
-         читается рядом с абзацем. -->
-    <div class="verification" id="verification" hidden>
-      <h3>Проверка проекта</h3>
-      <div class="verdict" id="verdict"></div>
-    </div>
-
-    <!-- Разделы проекта -->
-    <div class="sections" id="sections">
-      <p class="muted">Разделы проекта появятся здесь.</p>
-    </div>
-
-    <!-- Источники -->
-    <details class="sources" id="sources" hidden>
-      <summary>Источники, использованные в проекте</summary>
-      <ul id="source-list"></ul>
-    </details>
-
-    <!-- Версии -->
-    <details class="versions" id="versions" hidden>
-      <summary>История версий</summary>
-      <ul id="version-list"></ul>
-      <p class="muted small">
-        История версий — рабочие материалы проекта: хранится каждая
-        редакция целиком с автором правки. Режим доступа к этой истории
-        и сроки хранения должны быть определены регламентом суда —
-        вопрос правовой квалификации, см. docs/legal-regime.md.
-      </p>
-    </details>
-
-    <!-- Правка -->
-    <details class="editor" id="editor" hidden>
-      <summary>Внести правку вручную</summary>
-      <p class="muted small">
-        Текст сохраняется целиком как новая версия. Предыдущая версия
-        остаётся без изменений — так юридический акт можно показать
-        в том виде, в каком он был принят.
-      </p>
-      <select id="edit-author">
-        <option value="secretary">Правку внёс секретарь</option>
-        <option value="judge">Правку внёс судья</option>
-      </select>
-      <input type="text" id="edit-comment" placeholder="Комментарий к правке">
-      <textarea id="edit-text" rows="10"></textarea>
-      <button class="btn" id="btn-save-edit">Сохранить как новую версию</button>
-    </details>
-
-  </section>
-</main>
-
-<footer class="wrap foot">
-  Все данные и модели работают локально. Материалы дела не покидают компьютер.
+<footer>
+  <div class="wrap foot">
+    <span>Все данные и модели работают локально. Материалы дела не покидают компьютер.</span>
+    <span>Вопрос? Нажмите «?» рядом с непонятным местом.</span>
+  </div>
 </footer>
 
-<script src="app.js?v=0.2.0"></script>
+<script src="app.js?v=0.3.0"></script>
 </body>
 </html>

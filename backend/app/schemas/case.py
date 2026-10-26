@@ -62,9 +62,21 @@ class DocumentOut(BaseModel):
     sha256: str
     # Признак, что тип не входит в базовый перечень (п.11: расширяемость).
     is_known_type: bool = True
+    # Длина текста и наличие меток обезличивания («<ДАТА23>»): интерфейс
+    # показывает и то и другое в списке, не выгружая весь текст документа.
+    characters: int = 0
+    has_placeholders: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentDetailOut(DocumentOut):
+    """Документ с полным текстом — для просмотра материала дела."""
+
+    text: str = ""
+    # Уникальные метки вида <ДАТА23> — подсвечиваются в просмотрщике.
+    placeholders: list[str] = Field(default_factory=list)
 
 
 class CaseOut(BaseModel):
