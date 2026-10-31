@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import builtins
 import logging
 import uuid
 from typing import Any
@@ -93,7 +94,7 @@ class FeedbackService:
         verdict: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[Feedback]:
+    ) -> builtins.list[Feedback]:
         return await self.feedback.list(
             case_id=case_id, verdict=verdict, limit=limit, offset=offset
         )
@@ -106,7 +107,7 @@ class FeedbackService:
 
     async def export_rows(
         self, *, case_id: uuid.UUID | None = None, limit: int = 5000
-    ) -> list[dict[str, Any]]:
+    ) -> builtins.list[dict[str, Any]]:
         """Выгрузка для дообучения.
 
         Формат строки — «что показала модель» + «как оценил человек».

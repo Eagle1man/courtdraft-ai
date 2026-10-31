@@ -21,9 +21,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Iterable
 
 #: Сумма с валютой. Разряды — обычный или неразрывный пробел.
 _MONEY_RE = re.compile(
@@ -250,7 +250,9 @@ def check_dates(text: str, sources: Iterable[str]) -> list[Finding]:
     return findings
 
 
-def check_total(text: str, parts: Iterable[Decimal], tolerance: Decimal = Decimal("0.01")) -> Finding | None:
+def check_total(
+    text: str, parts: Iterable[Decimal], tolerance: Decimal = Decimal("0.01")
+) -> Finding | None:
     """Сверить заявленный итог с суммой слагаемых.
 
     Ищется сумма рядом со словом «всего»/«итого». Одно упоминание —
@@ -265,7 +267,7 @@ def check_total(text: str, parts: Iterable[Decimal], tolerance: Decimal = Decima
         if index < 0:
             continue
         window = text[index:index + 200]
-        matches = [m for m in _MONEY_RE.finditer(window)]
+        matches = list(_MONEY_RE.finditer(window))
         if len(matches) != 1:
             return None
         total = _amount(matches[0])

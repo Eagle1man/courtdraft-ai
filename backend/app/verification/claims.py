@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from decimal import Decimal
-from typing import Iterable
 
 from app.verification.contracts import (
     Claim,
@@ -100,7 +100,10 @@ def build_claims(
         missing: list[str] = []
 
         for _, value, raw in amounts:
-            needle = str(value).rstrip("0").rstrip(".") if value == value.to_integral() else str(value)
+            if value == value.to_integral():
+                needle = str(value).rstrip("0").rstrip(".")
+            else:
+                needle = str(value)
             # Число в документе может быть записано с разрядами —
             # ищем и «80000», и «80 000».
             spaced = f"{int(value):,}".replace(",", " ")

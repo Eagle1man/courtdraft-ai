@@ -18,9 +18,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from itertools import combinations_with_replacement
-from typing import Iterable
 
 #: Сумма с валютой: «80 000 руб.», «9 122,19 рубля», «6470 ₽».
 #: Разряды разделяются обычным или неразрывным пробелом.

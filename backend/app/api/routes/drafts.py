@@ -532,7 +532,7 @@ async def get_draft_claims(
         check_completeness,
         summarize_claims,
     )
-    from app.verification.contracts import text_checksum
+    from app.verification.contracts import Claim, text_checksum
 
     service = DraftService(session)
     draft = await service.drafts.get(draft_id)
@@ -554,7 +554,28 @@ async def get_draft_claims(
     version = versions[-1]
     documents = await service.documents.list_for_case(draft.case_id)
     texts = {document.filename: document.text for document in documents}
-    claims = build_claims(version.text, texts, section=f"v{version.version}")
+
+    # Утверждения строятся по тексту раздела, а не по всему проекту:
+    # судья читает их рядом с абзацем, к которому они относятся. Разбивка
+    # уже сохранена в citations версии и не зависит от текущего пакета
+    # доказательств, который мог быть пересобран после правки.
+    claim_sections: list[tuple[str, str]] = []
+    if isinstance(version.citations, list):
+        for position, raw in enumerate(version.citations, start=1):
+            if not isinstance(raw, dict):
+                continue
+            section_text = str(raw.get("text") or "")
+            if not section_text.strip():
+                continue
+            key = str(raw.get("key") or raw.get("name") or f"section{position}")
+            claim_sections.append((key, section_text))
+    if not claim_sections:
+        # Версия без разбивки (старые записи): весь текст одним блоком.
+        claim_sections = [("draft", version.text)]
+
+    claims: list[Claim] = []
+    for key, section_text in claim_sections:
+        claims.extend(build_claims(section_text, texts, section=key))
 
     # Полнота: требования из материалов, не отражённые в проекте.
     pack = await service.build_pack(draft.case_id)

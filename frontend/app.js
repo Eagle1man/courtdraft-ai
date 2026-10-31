@@ -152,6 +152,21 @@ const DOC_TYPE_TEXT = {
   OTHER: "Иной документ",
 };
 
+/*
+  Статус утверждения — не украшение. «Не проверялось правилами» и
+  «источник не найден» нельзя показывать одинаково: судья примет
+  непроверенное за подтверждённое, а это ровно тот дефект, от которого
+  продукт обязан защищать.
+*/
+const CLAIM_STATUS_TEXT = {
+  SUPPORTED: "подтверждено",
+  CONTRADICTED: "противоречит материалам",
+  INSUFFICIENT_EVIDENCE: "источник не найден",
+  NOT_APPLICABLE: "не проверялось правилами",
+  HUMAN_REVIEW_REQUIRED: "нужна проверка юриста",
+  VERIFICATION_ERROR: "проверка не выполнена",
+};
+
 function label(map, key) {
   return map[key] || key;
 }
@@ -760,7 +775,21 @@ async function loadDraft() {
   show($("btn-download"), true);
   $("m-sections").textContent = formatNum((draft.sections || []).length);
 
-  renderSections(draft);
+  /*
+    Утверждения запрашиваются отдельно, после показа проекта: сбой этого
+    запроса не должен прятать сам проект, но и молчать о нём нельзя —
+    иначе пустой список выглядит как «нечего проверять».
+  */
+  let claims = null;
+  let claimsError = "";
+  try {
+    claims = await api(`/api/drafts/${draft.id}/claims`);
+  } catch (error) {
+    claimsError = error.message || "проверка утверждений недоступна";
+  }
+  if (seq !== state.loadSeq) return;
+
+  renderSections(draft, claims, claimsError);
   renderVerification(draft.verification);
   renderSources(draft.sources || []);
   await loadVersions();
@@ -770,9 +799,107 @@ async function loadDraft() {
   renderSteps();
 }
 
-function renderSections(draft) {
+function claimChipClass(status) {
+  if (status === "SUPPORTED") return "green";
+  if (status === "CONTRADICTED" || status === "VERIFICATION_ERROR") return "red";
+  if (status === "INSUFFICIENT_EVIDENCE") return "amber";
+  return "grey";
+}
+
+/*
+  Одно утверждение: статус, текст, документ и цитата. Цитата показывается
+  прямо здесь, а не ссылкой на другой экран: подтверждение, до которого
+  надо кликать, судья не откроет.
+*/
+function claimHtml(claim) {
+  const status = claim.support_status || "";
+  const chip =
+    `<span class="chip ${claimChipClass(status)}">` +
+    `${escapeHtml(label(CLAIM_STATUS_TEXT, status))}</span>`;
+
+  const references = claim.evidence || [];
+  let sources = "";
+  if (references.length) {
+    sources =
+      `<div class="cl-src">` +
+      references
+        .map(
+          (reference) =>
+            `<div class="cl-ref"><b>${escapeHtml(reference.document || "документ не указан")}</b>` +
+            (reference.quote
+              ? `<q>${escapeHtml(reference.quote)}</q>`
+              : '<span class="muted"> цитата не найдена</span>') +
+            (reference.locator
+              ? `<span class="cl-loc">${escapeHtml(reference.locator)}</span>`
+              : "") +
+            `</div>`
+        )
+        .join("") +
+      `</div>`;
+  } else if (status === "NOT_APPLICABLE") {
+    // «Не проверялось правилами» и «источник не найден» — разные факты:
+    // в утверждении нет суммы или даты, сверять правилами нечего.
+    sources =
+      `<div class="cl-src none">Правилами не проверялось: в утверждении нет ` +
+      `суммы или даты. Источник не подтверждён — проверьте по материалам дела.</div>`;
+  } else {
+    sources =
+      `<div class="cl-src none">Источник не найден — утверждение нельзя ` +
+      `считать подтверждённым.</div>`;
+  }
+
+  const reason =
+    claim.review_reason && !references.length
+      ? `<div class="cl-reason">${escapeHtml(claim.review_reason)}</div>`
+      : "";
+
+  return (
+    `<li class="cl">${chip}<span class="cl-t">${escapeHtml(claim.text || "")}</span>` +
+    `${sources}${reason}</li>`
+  );
+}
+
+/** Утверждения одного раздела: их видно рядом с абзацем, к которому они относятся. */
+function claimsBlock(sectionClaims) {
+  if (!sectionClaims.length) return "";
+  const supported = sectionClaims.filter(
+    (claim) => claim.support_status === "SUPPORTED"
+  ).length;
+  const attention = sectionClaims.length - supported;
+  return (
+    `<div class="claims"><div class="cl-h">Утверждения` +
+    `<span>подтверждено ${supported} · требуют проверки ${attention}</span></div>` +
+    `<ul>${sectionClaims.map(claimHtml).join("")}</ul></div>`
+  );
+}
+
+function renderSections(draft, claims, claimsError) {
   const box = $("sections");
   box.innerHTML = "";
+
+  /*
+    Утверждения приходят одним списком с полем section: разбивка по
+    разделам делается здесь, чтобы у раздела не было двух источников
+    правды о том, к чему относится абзац.
+  */
+  const claimsBySection = {};
+  ((claims && claims.claims) || []).forEach((claim) => {
+    const key = claim.section || "";
+    (claimsBySection[key] = claimsBySection[key] || []).push(claim);
+  });
+  const completeness = claimsBySection.completeness || [];
+  delete claimsBySection.completeness;
+
+  // Отказ запроса — отдельная строка, а не пустой список: «утверждений
+  // нет» и «проверка не ответила» — разные утверждения.
+  if (claimsError) {
+    const note = document.createElement("p");
+    note.className = "claims-error";
+    note.textContent =
+      `Проверка утверждений недоступна: ${claimsError}. ` +
+      "Разделы показаны без источников.";
+    box.appendChild(note);
+  }
 
   /*
     Замечания группируются по имени раздела: судья читает замечание
@@ -786,6 +913,7 @@ function renderSections(draft) {
     (bySection[key] = bySection[key] || []).push(issue);
   });
   const matched = {};
+  const matchedClaims = {};
 
   const remarkHtml = (issue) => {
     const important = issue.severity === "HIGH" || issue.severity === "CRITICAL";
@@ -801,6 +929,9 @@ function renderSections(draft) {
   (draft.sections || []).forEach((section, index) => {
     matched[section.name] = true;
     const ownIssues = bySection[section.name] || [];
+    const sectionKey = section.key || section.name;
+    const ownClaims = claimsBySection[sectionKey] || [];
+    if (ownClaims.length) matchedClaims[sectionKey] = true;
 
     const chips = [];
     if (section.needs_review) chips.push('<span class="chip amber">нужна проверка</span>');
@@ -825,6 +956,7 @@ function renderSections(draft) {
       `${chips.join("")}</div>` +
       `<div class="body">${gaps}<div class="txt">${escapeHtml(section.text || "")}</div>` +
       ownIssues.map(remarkHtml).join("") +
+      claimsBlock(ownClaims) +
       (section.citations && section.citations.length
         ? `<div class="cites">Источники: ${escapeHtml(section.citations.join(", "))}</div>`
         : `<div class="cites">Источник не указан — раздел требует проверки.</div>`) +
@@ -832,6 +964,33 @@ function renderSections(draft) {
 
     box.appendChild(article);
   });
+
+  // Требования из материалов, не попавшие в проект вовсе: их нельзя
+  // прятать внутрь разделов — их там нет.
+  if (completeness.length) {
+    const missingBlock = document.createElement("div");
+    missingBlock.className = "claims completeness";
+    missingBlock.innerHTML =
+      `<div class="cl-h">Не отражено в проекте` +
+      `<span>требований из материалов: ${completeness.length}</span></div>` +
+      `<ul>${completeness.map(claimHtml).join("")}</ul>`;
+    box.appendChild(missingBlock);
+  }
+
+  // Утверждения, не привязанные к разделу, показываются ниже списка:
+  // потерянное утверждение выглядит как его отсутствие.
+  const unattached = Object.keys(claimsBySection)
+    .filter((key) => !matchedClaims[key])
+    .flatMap((key) => claimsBySection[key]);
+  if (unattached.length) {
+    const rest = document.createElement("div");
+    rest.className = "unsectioned";
+    rest.innerHTML =
+      '<p class="muted small">Эти утверждения проверка не привязала ' +
+      "к разделу:</p>" +
+      `<ul class="claims-list">${unattached.map(claimHtml).join("")}</ul>`;
+    box.appendChild(rest);
+  }
 
   // Замечания без привязки к разделу — после текста, а не перед ним.
   const leftover = [];

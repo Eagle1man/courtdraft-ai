@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from app.agents.evidence_pack import EvidencePack
 from app.verification.deterministic import Finding, amounts_by_purpose
 
 
@@ -36,7 +37,7 @@ def _money(value: str) -> Decimal | None:
         return None
 
 
-def build_matrix(pack, draft_text: str) -> list[MatrixRow]:
+def build_matrix(pack: EvidencePack, draft_text: str) -> list[MatrixRow]:
     """Сопоставить требования материалов с проектом.
 
     Требования берутся из размеченных фраз пакета (категория

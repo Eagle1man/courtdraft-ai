@@ -986,3 +986,106 @@ class TestStatusVocabulary:
 
     def test_case_status_values(self) -> None:
         assert "NEW" in {s.value for s in CaseStatus}
+
+
+def _flat(value: str) -> str:
+    """Текст без переносов: утверждение режется по предложениям и склеивает строки."""
+    return " ".join((value or "").split())
+
+
+class TestDraftClaimsEndpoint:
+    """GET /api/drafts/{id}/claims — утверждения с источниками (Этап 9).
+
+    Контракт нужен интерфейсу: судья читает утверждение и цитату рядом с
+    разделом проекта, а не отдельным списком без привязки.
+    """
+
+    async def test_claims_are_grouped_by_draft_sections(
+        self, api_client: AsyncClient
+    ) -> None:
+        case_id = await _make_case_with_documents(api_client)
+        draft = await _generate_sync(api_client, case_id)
+
+        response = await api_client.get(f"/api/drafts/{draft['id']}/claims")
+        assert response.status_code == 200, response.text
+        body = response.json()
+
+        sections = {section["key"]: section["text"] for section in draft["sections"]}
+        assert sections, "в проекте не оказалось разделов — проверять нечего"
+
+        payload = body["claims"]
+        assert payload, "утверждения не извлечены"
+        assert body["version"] == draft["current_version"]
+
+        for claim in payload:
+            # Утверждение принадлежит разделу проекта или полноте.
+            assert claim["section"] in sections.keys() | {"completeness"}, claim
+            if claim["section"] == "completeness":
+                continue
+            # Текст берётся из своего раздела, а не из соседнего.
+            assert _flat(claim["text"]) in _flat(sections[claim["section"]]), claim
+
+        assert any(claim["section"] in sections for claim in payload), (
+            "все утверждения ушли в полноту — привязки к разделам нет"
+        )
+
+    async def test_supported_claim_has_document_and_quote(
+        self, api_client: AsyncClient
+    ) -> None:
+        """Подтверждённое утверждение обязано нести документ и цитату.
+
+        Иначе интерфейс покажет «подтверждено» без доказательства — это
+        ровно то, что продукт обещает не делать. Сумма берётся из
+        материалов дела (01_claim.txt: 150000 руб.), а не выдумана.
+        """
+        case_id = await _make_case_with_documents(api_client)
+        draft = await _generate_sync(api_client, case_id)
+
+        edited = await api_client.post(
+            f"/api/drafts/{draft['id']}/versions",
+            json={
+                "text": (
+                    "РЕШИЛ:\n\nВзыскать с ответчика задолженность "
+                    "в размере 150 000 руб."
+                ),
+                "author": "judge",
+                "comment": "проверка цитаты",
+            },
+        )
+        assert edited.status_code == 201, edited.text
+
+        body = (
+            await api_client.get(f"/api/drafts/{draft['id']}/claims")
+        ).json()
+        supported = [
+            claim for claim in body["claims"] if claim["support_status"] == "SUPPORTED"
+        ]
+        assert supported, "сумма из материалов не подтвердилась — проверка не работает"
+        for claim in supported:
+            assert claim["evidence"], claim
+            for reference in claim["evidence"]:
+                assert reference["document"], claim
+                assert reference["quote"], claim
+
+    async def test_summary_matches_claims(self, api_client: AsyncClient) -> None:
+        case_id = await _make_case_with_documents(api_client)
+        draft = await _generate_sync(api_client, case_id)
+
+        body = (
+            await api_client.get(f"/api/drafts/{draft['id']}/claims")
+        ).json()
+        summary = body["summary"]
+        claims = body["claims"]
+        assert summary["total"] == len(claims)
+        assert summary["supported"] == sum(
+            1 for claim in claims if claim["support_status"] == "SUPPORTED"
+        )
+        assert summary["insufficient"] == sum(
+            1
+            for claim in claims
+            if claim["support_status"] == "INSUFFICIENT_EVIDENCE"
+        )
+
+    async def test_unknown_draft_is_404(self, api_client: AsyncClient) -> None:
+        response = await api_client.get(f"/api/drafts/{uuid.uuid4()}/claims")
+        assert response.status_code == 404

@@ -638,6 +638,84 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .gaps ul { margin: 0; padding-left: 18px; }
 .gaps li { margin: 2px 0; }
 
+/* ── Утверждения раздела с источниками ─────────────────────────────
+ * Блок стоит под текстом раздела: судья читает утверждение и цитату
+ * рядом с абзацем, а не ищет их на другом экране. */
+.claims {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: #fbfaf7;
+}
+
+.claims.completeness {
+  margin: 0 0 12px;
+  border-color: var(--amber-line);
+  background: var(--amber-bg);
+}
+
+.cl-h {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink2);
+}
+
+.cl-h span { font-weight: 400; }
+
+.claims ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line2);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.cl-t { flex: 1; min-width: 0; color: #2a3743; }
+.cl-src { flex-basis: 100%; font-size: 12.5px; color: #4b5a67; }
+.cl-ref b { color: var(--bronze); font-weight: 650; }
+
+.cl-ref q {
+  display: block;
+  margin-top: 2px;
+  padding: 5px 8px;
+  background: #fff;
+  border-left: 2px solid var(--bronze-line);
+  border-radius: 0 6px 6px 0;
+  quotes: none;
+}
+
+.cl-loc { display: block; color: var(--ink2); }
+.cl-src.none, .cl-reason { color: #8d1c13; }
+.cl-reason { flex-basis: 100%; font-size: 12.5px; }
+
+/* Отказ запроса утверждений — заметно, но не красным баннером:
+ * проект при этом показан и пригоден к чтению. */
+.claims-error {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px dashed var(--red-line);
+  border-radius: 8px;
+  background: var(--red-bg);
+  font-size: 13px;
+  color: #8d1c13;
+}
+
 /* ── Источники, версии, правка — сворачиваемые блоки ───────────── */
 
 .details-box {
