@@ -354,23 +354,43 @@ async def run_preflight(
                 hint="запустится, но генерация раздела займёт минуты",
             )
         )
-    elif model_gb and (sizes is not None or vram is not None):
+    elif model_gb and sizes is not None and sizes[0] >= needed_gb:
+        # Не хватает не машине, а свободной памяти прямо сейчас: её можно
+        # освободить. Это предупреждение, а не запрет — раньше проверка
+        # сравнивала модель с *текущей* свободной памятью и объявляла
+        # невозможным прогон, который на этой же машине уже состоялся.
+        shortfall = needed_gb - sizes[1]
+        report.checks.append(
+            Check(
+                name="memory",
+                state=CheckState.WARN,
+                detail=(
+                    f"модель {model_gb:.1f} ГБ влезает в {sizes[0]:.1f} ГБ, "
+                    f"но сейчас свободно {sizes[1]:.1f}: нужно освободить "
+                    f"около {shortfall:.1f} ГБ"
+                ),
+                hint=(
+                    "закройте тяжёлые программы (кто занял: "
+                    "python scripts\\memory_report.py); без этого прогон "
+                    "уйдёт в подкачку и будет идти очень долго"
+                ),
+            )
+        )
+    elif model_gb and sizes is not None:
         vram_part = (
             f"{vram[1]:.1f} ГБ" if vram is not None else "нет (видеокарта не найдена)"
         )
-        ram_part = f"{sizes[1]:.1f} ГБ" if sizes is not None else "неизвестно"
         report.checks.append(
             Check(
                 name="memory",
                 state=CheckState.FAIL,
                 detail=(
-                    f"модель {model_gb:.1f} ГБ, с запасом нужно "
-                    f"{needed_gb:.1f}: свободно VRAM {vram_part}, RAM {ram_part}"
+                    f"модель {model_gb:.1f} ГБ, с запасом нужно {needed_gb:.1f}: "
+                    f"больше всей памяти {sizes[0]:.1f} ГБ, свободно VRAM {vram_part}"
                 ),
                 hint=(
-                    "взять модель меньше (4b вместо 7b), освободить память "
-                    "или перенести прогон на машину с большей памятью; "
-                    "что именно влезает здесь — python scripts\\memory_report.py"
+                    "нужна машина с большей памятью или модель меньше "
+                    "(4b вместо 7b)"
                 ),
             )
         )

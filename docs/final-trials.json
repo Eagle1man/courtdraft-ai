@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-31 16:31",
+  "date": "2026-10-31 17:46",
   "platform": "Windows-11-10.0.26200-SP0",
   "python": "3.14.3",
   "checks": [
@@ -8,10 +8,10 @@
       "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe -m pytest -q",
       "cwd": "D:\\courtdraft-ai\\backend",
       "exit_code": 0,
-      "seconds": 71.6,
+      "seconds": 73.7,
       "output_tail": [
         "........................................................................ [ 94%]",
-        "..............................................................           [100%]"
+        "...............................................................          [100%]"
       ],
       "stderr_tail": []
     },
@@ -85,7 +85,7 @@
       "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe scripts/stage7_routing_benchmark.py",
       "cwd": "D:\\courtdraft-ai",
       "exit_code": 0,
-      "seconds": 1.1,
+      "seconds": 1.0,
       "output_tail": [
         "  \"cache_enabled_by_default\": true,",
         "  \"ttl_seconds\": 3600,",

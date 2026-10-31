@@ -1,10 +1,10 @@
 {
-  "date": "2026-10-31 16:29",
+  "date": "2026-10-31 17:43",
   "case_number": "DEMO-001",
   "version": 3,
   "provider": "ollama",
-  "model": "qwen2.5:1.5b",
-  "elapsed_seconds": 153.9,
+  "model": "vikhr-7b:latest",
+  "elapsed_seconds": 109.1,
   "sections": [
     {
       "key": "introductory",
@@ -23,13 +23,13 @@
     {
       "key": "descriptive",
       "name": "Описательная часть",
-      "chars": 977,
-      "latency_ms": 65726,
+      "chars": 0,
+      "latency_ms": 12103,
       "is_mock": false,
       "needs_review": true,
       "error": "",
       "gaps": [
-        "[текст оборван по лимиту ответа]"
+        "Материалы дела не позволяют подготовить раздел."
       ]
     },
     {
@@ -45,27 +45,26 @@
     {
       "key": "established",
       "name": "УСТАНОВИЛ",
-      "chars": 672,
-      "latency_ms": 57556,
+      "chars": 0,
+      "latency_ms": 52180,
       "is_mock": false,
       "needs_review": true,
       "error": "",
       "gaps": [
-        "6."
+        "Материалы дела не позволяют подготовить раздел."
       ]
     },
     {
       "key": "motivating",
       "name": "Мотивировочная часть",
-      "chars": 0,
-      "latency_ms": 30324,
+      "chars": 112,
+      "latency_ms": 43819,
       "is_mock": false,
       "needs_review": true,
       "error": "",
       "gaps": [
         "обстоятельство «наступление срока оплаты» не подтверждено ни одним документом дела",
-        "обстоятельство «проценты по ст. 395 ГК РФ (если неустойки нет)» не подтверждено ни одним документом дела",
-        "[текст оборван по лимиту ответа]"
+        "обстоятельство «проценты по ст. 395 ГК РФ (если неустойки нет)» не подтверждено ни одним документом дела"
       ]
     },
     {
@@ -83,9 +82,9 @@
     "status": "REVIEW_REQUIRED",
     "issues": 10,
     "critical": 0,
-    "high": 1,
+    "high": 2,
     "claims_checked": 6,
-    "unsupported_claims": 1
+    "unsupported_claims": 2
   },
   "preflight": {
     "ready": true,
@@ -93,7 +92,7 @@
       {
         "name": "provider",
         "state": "OK",
-        "detail": "LLM_PROVIDER=ollama, модель qwen2.5:1.5b",
+        "detail": "LLM_PROVIDER=ollama, модель vikhr-7b:latest",
         "hint": ""
       },
       {
@@ -105,14 +104,14 @@
       {
         "name": "model",
         "state": "OK",
-        "detail": "модель qwen2.5:1.5b в реестре",
+        "detail": "модель vikhr-7b:latest в реестре",
         "hint": ""
       },
       {
         "name": "memory",
         "state": "WARN",
-        "detail": "модель 0.9 ГБ пойдёт на CPU: свободной памяти 1.4 ГБ из 7.8",
-        "hint": "запустится, но генерация раздела займёт минуты"
+        "detail": "модель 4.0 ГБ влезает в 7.8 ГБ, но сейчас свободно 0.9: нужно освободить около 3.8 ГБ",
+        "hint": "закройте тяжёлые программы (кто занял: python scripts\\memory_report.py); без этого прогон уйдёт в подкачку и будет идти очень долго"
       },
       {
         "name": "embeddings",

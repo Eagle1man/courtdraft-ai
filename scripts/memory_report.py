@@ -85,17 +85,42 @@ def top_processes(limit: int) -> list[tuple[str, int, float]]:
     return rows[:limit]
 
 
-def models_that_fit(tags: dict[str, Any], available_gb: float) -> list[tuple[str, float, bool]]:
-    result: list[tuple[str, float, bool]] = []
+def models_that_fit(
+    tags: dict[str, Any], available_gb: float, total_gb: float
+) -> list[tuple[str, float, str]]:
+    """Состояние каждой модели: fits (сейчас), free_up (после освобождения), no.
+
+    Три состояния, а не два: «не влезает сейчас» и «не влезает в машину» —
+    разные ответы, и второй запрещает запуск, а первый — только просит
+    освободить память.
+    """
+    result: list[tuple[str, float, str]] = []
     for item in tags.get("models", []):
         if not isinstance(item, dict):
             continue
         size_gb = float(item.get("size", 0)) / 1024**3
-        result.append(
-            (str(item.get("name", "")), size_gb, size_gb * MEMORY_HEADROOM <= available_gb)
-        )
+        needed = size_gb * MEMORY_HEADROOM
+        if needed <= available_gb:
+            state = "fits"
+        elif needed <= total_gb:
+            state = "free_up"
+        else:
+            state = "no"
+        result.append((str(item.get("name", "")), size_gb, state))
     result.sort(key=lambda row: row[1])
     return result
+
+
+def _looks_like_embeddings(name: str) -> bool:
+    """Похоже на модель эмбеддингов — по имени, других признаков нет.
+
+    Реестр Ollama не различает типы моделей, поэтому это эвристика:
+    предлагать `nomic-embed-text` «для прогона проекта» было бы советом
+    запустить не тот класс модели. Ошибка эвристики безопасна: модель
+    просто не попадёт в рекомендацию, но останется в списке.
+    """
+    lowered = name.lower()
+    return any(marker in lowered for marker in ("embed", "bge-", "e5-"))
 
 
 def main() -> int:
@@ -134,25 +159,48 @@ def main() -> int:
         return 0
 
     capacity = max(available_gb, vram[1] if vram else 0.0)
-    rows = models_that_fit(tags, capacity)
+    rows = models_that_fit(tags, capacity, max(total_gb, vram[0] if vram else 0.0))
     if not rows:
         print("  реестр пуст")
         return 0
-    for name, size_gb, fits in rows:
-        mark = "влезет" if fits else "НЕ влезет"
-        print(f"  {mark:<10} {name:<52} файл {size_gb:.1f} ГБ")
+    labels = {
+        "fits": "влезет",
+        "free_up": "освободить",
+        "no": "НЕ влезет",
+    }
+    for name, size_gb, state in rows:
+        kind = " (эмбеддинги)" if _looks_like_embeddings(name) else ""
+        print(f"  {labels[state]:<12} {name:<52} файл {size_gb:.1f} ГБ{kind}")
 
-    fitting = [row for row in rows if row[2]]
+    ready = [
+        row
+        for row in rows
+        if row[2] == "fits" and not _looks_like_embeddings(row[0])
+    ]
+    after_free = [
+        row
+        for row in rows
+        if row[2] == "free_up" and not _looks_like_embeddings(row[0])
+    ]
     print()
-    if fitting:
-        biggest = fitting[-1]
+    if ready:
+        biggest = ready[-1]
         print(
-            f"самая крупная подходящая модель: {biggest[0]} "
-            f"({biggest[1]:.1f} ГБ, нужно с запасом {biggest[1] * MEMORY_HEADROOM:.1f})"
+            f"самая крупная модель, которая влезает сейчас: {biggest[0]} "
+            f"({biggest[1]:.1f} ГБ)"
         )
         print(f"для прогона: OLLAMA_MODEL={biggest[0]}")
+    elif after_free:
+        biggest = after_free[-1]
+        print(
+            f"сейчас ни одна не влезает целиком; после освобождения памяти — "
+            f"{biggest[0]} ({biggest[1]:.1f} ГБ)"
+        )
     else:
-        print("ни одна модель не влезает: закройте тяжёлые программы или возьмите модель меньше")
+        print(
+            "ни одна модель не влезает даже в общий объём памяти: "
+            "нужна модель меньше или другая машина"
+        )
     return 0
 
 

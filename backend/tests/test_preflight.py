@@ -119,12 +119,27 @@ async def test_ready_when_everything_is_in_place() -> None:
     assert _states(report)["memory"] is CheckState.OK
 
 
-async def test_model_bigger_than_ram_and_vram_is_a_failure() -> None:
-    report = await _run(_settings(), memory=(8.0, 1.0), gpu=(4.0, 2.0))
+async def test_model_bigger_than_total_memory_is_a_failure() -> None:
+    """Не влезает в машину вообще — только тогда запрет."""
+    report = await _run(_settings(), memory=(4.0, 1.0), gpu=(4.0, 2.0))
     check = _check(report, "memory")
     assert check.state is CheckState.FAIL
-    assert "4.8" in check.detail and "1.0" in check.detail
+    assert "больше всей памяти" in check.detail
     assert report.ready is False
+
+
+async def test_tight_free_memory_is_a_warning_not_a_ban() -> None:
+    """Регрессия: 7B на этой машине уже запускали при малой свободной RAM.
+
+    Проверка не должна объявлять невозможным то, что освобождается
+    закрытием программ: это предупреждение с адресом «кто занял».
+    """
+    report = await _run(_settings(), memory=(8.0, 1.0), gpu=None)
+    check = _check(report, "memory")
+    assert check.state is CheckState.WARN
+    assert "освободить" in check.detail
+    assert "memory_report" in check.hint
+    assert report.ready is True
 
 
 async def test_model_fits_vram_even_when_ram_is_tight() -> None:
@@ -136,12 +151,13 @@ async def test_model_fits_vram_even_when_ram_is_tight() -> None:
     assert report.ready is True
 
 
-async def test_no_headroom_is_not_a_fit() -> None:
-    """4.8 ГБ модели в 5.0 ГБ VRAM — «влезает впритык» и падает на контексте."""
+async def test_no_headroom_in_vram_falls_back_to_cpu_with_warning() -> None:
+    """4.8 ГБ модели в 5.0 ГБ VRAM мало с запасом — но CPU-путь остаётся."""
     report = await _run(_settings(), memory=(8.0, 1.0), gpu=(6.0, 5.0))
     check = _check(report, "memory")
-    assert check.state is CheckState.FAIL
-    assert "запасом" in check.detail
+    assert check.state is CheckState.WARN
+    assert "освободить" in check.detail
+    assert report.ready is True
 
 
 async def test_model_goes_to_cpu_when_ram_allows() -> None:
