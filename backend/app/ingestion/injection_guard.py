@@ -69,9 +69,16 @@ def _split(text: str) -> list[str]:
     return chunks
 
 
-def classify_chunks(chunks: list[str], model: str) -> list[float]:
-    """Вероятности «malicious» по окнам. Синхронно: вызывать в потоке."""
-    import torch
+#: Загруженные модели: ключ — имя, значение — (токенизатор, модель, индекс
+#: метки). Без кэша оценка набора из 50 фрагментов загружала бы модель 50 раз.
+_loaded: dict[str, tuple[object, object, int]] = {}
+
+
+def _load(model: str) -> tuple[object, object, int]:
+    if model in _loaded:
+        return _loaded[model]
+
+    import torch  # noqa: F401 - нужен внутри загрузки
     from transformers import (
         AutoModelForSequenceClassification,
         AutoTokenizer,
@@ -80,20 +87,32 @@ def classify_chunks(chunks: list[str], model: str) -> list[float]:
     tokenizer = AutoTokenizer.from_pretrained(model)
     classifier = AutoModelForSequenceClassification.from_pretrained(model)
     classifier.eval()
-
-    labels = {index: str(label).upper() for index, label in classifier.config.id2label.items()}
+    labels = {
+        index: str(label).upper()
+        for index, label in classifier.config.id2label.items()
+    }
     malicious_index = next(
         (index for index, label in labels.items() if "MALICIOUS" in label),
         max(labels) if labels else 1,
     )
+    loaded = (tokenizer, classifier, malicious_index)
+    _loaded[model] = loaded
+    return loaded
+
+
+def classify_chunks(chunks: list[str], model: str) -> list[float]:
+    """Вероятности «malicious» по окнам. Синхронно: вызывать в потоке."""
+    import torch
+
+    tokenizer, classifier, malicious_index = _load(model)
 
     scores: list[float] = []
     with torch.no_grad():
         for chunk in chunks:
-            encoded = tokenizer(
+            encoded = tokenizer(  # type: ignore[operator]
                 chunk, return_tensors="pt", truncation=True, max_length=512
             )
-            logits = classifier(**encoded).logits
+            logits = classifier(**encoded).logits  # type: ignore[operator]
             probabilities = torch.softmax(logits, dim=-1)[0]
             scores.append(float(probabilities[malicious_index]))
     return scores
@@ -119,3 +138,8 @@ async def guard_check(
 
     worst = max(scores) if scores else 0.0
     return GuardVerdict(score=worst, model=model, chunks=len(chunks))
+
+
+async def score_text(text: str, *, model: str = DEFAULT_MODEL) -> float:
+    """Одна оценка «malicious»: нужна для выбора порога на наборе."""
+    return (await guard_check(text, model=model)).score
