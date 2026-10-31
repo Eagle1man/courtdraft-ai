@@ -3,10 +3,10 @@
   "unique_prompts": 4,
   "provider_calls": 4,
   "first_pass_ms": [
-    28,
-    25,
-    32,
-    31
+    20,
+    20,
+    22,
+    21
   ],
   "second_pass_ms": [
     0,
@@ -20,7 +20,7 @@
     "misses": 4,
     "hit_ratio_percent": 50,
     "hit_avg_ms": 0,
-    "miss_avg_ms": 29
+    "miss_avg_ms": 20
   },
   "identical_outputs": true,
   "mismatched_prompts": [],

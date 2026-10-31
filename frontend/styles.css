@@ -427,6 +427,14 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   color: var(--bronze);
 }
 
+/* В тексте найдены фразы, похожие на инструкции модели: документ остаётся
+ * в деле целиком, но человек должен увидеть это до формирования проекта. */
+.kind.warn {
+  background: var(--red-bg);
+  border-color: var(--red-line);
+  color: #8d1c13;
+}
+
 /* Метка «в файле скрыты личные данные» — показать, не читая файл. */
 .warnline {
   display: flex;

@@ -273,6 +273,18 @@ class CaseDocument(TimestampMixin, Base):
             return str(self.metadata_json.get("text_source", "native"))
         return "native"
 
+    @property
+    def injection_warning(self) -> bool:
+        """В тексте есть фразы, похожие на инструкции модели.
+
+        Это предупреждение человеку, а не признак «документ вредный»:
+        документ остаётся в деле целиком, но перед формированием проекта
+        о нём стоит знать.
+        """
+        if isinstance(self.metadata_json, dict):
+            return bool(self.metadata_json.get("injection"))
+        return False
+
     def __repr__(self) -> str:
         return f"<CaseDocument {self.filename} type={self.document_type}>"
 

@@ -69,6 +69,10 @@ class DocumentOut(BaseModel):
     #: native — текстовый слой файла, ocr — распознано с изображения.
     #: Текст OCR может содержать ошибки распознавания, и это видно сразу.
     text_source: str = "native"
+    #: В тексте найдены фразы, похожие на инструкции модели.
+    injection_warning: bool = False
+    #: Предупреждения текущей загрузки (дубликат, OCR, инструкции).
+    warnings: list[str] = Field(default_factory=list)
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

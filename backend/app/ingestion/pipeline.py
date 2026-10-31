@@ -119,6 +119,18 @@ async def ingest_document(
         )
         raise IngestionError(str(exc)) from exc
 
+    from app.ingestion.injection import find_injection
+
+    injection = find_injection(extracted.text)
+    if injection:
+        extracted.metadata["injection"] = injection
+        kinds = ", ".join(sorted({item["kind"] for item in injection}))
+        warnings.append(
+            f"{filename}: в тексте есть фразы, похожие на инструкции модели "
+            f"({kinds}). Документ сохранён целиком, но проверьте его: "
+            "модель не должна выполнять команды из материалов."
+        )
+
     ocr_info = extracted.metadata.get("ocr")
     if isinstance(ocr_info, dict) and ocr_info.get("used"):
         # Текст получен распознаванием: цитаты из него могут содержать

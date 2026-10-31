@@ -491,6 +491,9 @@ async function loadDocuments() {
       (doc.text_source === "ocr"
         ? '<span class="kind ocr" title="Текст получен распознаванием скана: возможны ошибки OCR">распознано OCR</span>'
         : "") +
+      (doc.injection_warning
+        ? '<span class="kind warn" title="В тексте есть фразы, похожие на инструкции модели: они не выполняются, но документ стоит проверить">⚠ инструкции в тексте</span>'
+        : "") +
       `<span>${escapeHtml(chars(doc.characters))}</span>`;
 
     li.innerHTML =
@@ -524,6 +527,7 @@ async function uploadFiles(fileList) {
   const previousTitle = title.textContent;
   const loaded = [];
   const failed = [];
+  const notes = [];
 
   drop.classList.add("busy");
 
@@ -546,7 +550,9 @@ async function uploadFiles(fileList) {
       );
 
       if (response.ok) {
+        const body = await response.json().catch(() => ({}));
         loaded.push(file.name);
+        (body.warnings || []).forEach((warning) => notes.push(warning));
       } else {
         let detail = `Не удалось загрузить «${file.name}».`;
         try {
@@ -570,11 +576,15 @@ async function uploadFiles(fileList) {
 
   if (loaded.length && !failed.length) {
     showAlert(
-      `Загружено: ${loaded.join(", ")}. Материалы уже доступны проекту.`,
+      `Загружено: ${loaded.join(", ")}. Материалы уже доступны проекту.` +
+        (notes.length ? ` ${notes.join(" ")}` : ""),
       true
     );
   } else if (loaded.length) {
-    showAlert(`Загружено ${loaded.length}. Проблемы: ${failed.join(" ")}`);
+    showAlert(
+      `Загружено ${loaded.length}. Проблемы: ${failed.join(" ")}` +
+        (notes.length ? ` ${notes.join(" ")}` : "")
+    );
   } else {
     showAlert(failed.join(" "));
   }

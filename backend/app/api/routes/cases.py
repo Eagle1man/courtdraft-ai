@@ -114,6 +114,7 @@ def _to_document_out(document: CaseDocument) -> DocumentOut:
         characters=len(document.text),
         has_placeholders=bool(_PLACEHOLDER.search(document.text)),
         text_source=document.text_source,
+        injection_warning=document.injection_warning,
         created_at=document.created_at,
     )
 
@@ -317,7 +318,12 @@ async def upload_document(
             status_code=status.HTTP_409_CONFLICT,
             detail="Документ записан, но не сохранился. Попробуйте ещё раз.",
         )
-    return _to_document_out(document)
+    out = _to_document_out(document)
+    # Предупреждения этой загрузки (OCR, инструкции в тексте) относятся к
+    # конкретному файлу и в базе не хранятся: это сообщение человеку здесь
+    # и сейчас, а не свойство документа.
+    out.warnings = list(result.warnings)
+    return out
 
 
 @router.post(
@@ -349,6 +355,19 @@ async def register_document(
             detail=f"Документ с таким содержимым уже загружен: {existing.filename}",
         )
 
+    from app.ingestion.injection import find_injection
+
+    warnings: list[str] = []
+    metadata = dict(payload.metadata or {})
+    injection = find_injection(payload.text)
+    if injection:
+        metadata["injection"] = injection
+        kinds = ", ".join(sorted({item["kind"] for item in injection}))
+        warnings.append(
+            f"{payload.filename}: в тексте есть фразы, похожие на инструкции "
+            f"модели ({kinds}). Документ сохранён целиком, но проверьте его."
+        )
+
     document = CaseDocument(
         case_id=case_id,
         filename=payload.filename,
@@ -356,7 +375,7 @@ async def register_document(
         mime_type=payload.mime_type,
         page_count=payload.page_count,
         text=payload.text,
-        metadata_json=payload.metadata,
+        metadata_json=metadata,
         sha256=sha256,
     )
     await service.documents.add(document)
@@ -369,7 +388,9 @@ async def register_document(
         characters=len(payload.text),
     )
     await session.refresh(document)
-    return _to_document_out(document)
+    out = _to_document_out(document)
+    out.warnings = warnings
+    return out
 
 
 @router.get("/{case_id}/participants", response_model=list[ParticipantOut])
