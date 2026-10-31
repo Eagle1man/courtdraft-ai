@@ -23,6 +23,8 @@ DATASET = (
 LABELS = ("benign", "injection")
 #: Порог, при котором предупреждения ещё можно не закрывать не читая.
 MIN_PRECISION = 0.9
+#: Минимальная полнота: фильтр должен ловить хотя бы большинство попыток.
+MIN_RECALL = 0.7
 
 
 @dataclass(frozen=True)
@@ -100,22 +102,33 @@ def choose_threshold(
     *,
     thresholds: tuple[float, ...] = (0.5, 0.6, 0.7, 0.8, 0.9),
     min_precision: float = MIN_PRECISION,
+    min_recall: float = MIN_RECALL,
 ) -> dict[str, float | int | str]:
     """Порог: максимальный recall при precision >= min_precision.
 
-    Если ни один порог не даёт нужной точности, возвращается лучший по F1
-    с пометкой — это честнее, чем молча выдать порог, который шумит.
+    Нужен и минимум recall: иначе выгодным становится порог, который
+    ничего не ловит, но зато не ошибается (precision 1.00, recall 0.00).
+    Такой «идеальный» фильтр бесполезен, поэтому он не рекомендуется.
+
+    Если ни один порог не подходит, возвращается лучший по F1 с пометкой —
+    это честнее, чем молча выдать порог, который шумит или молчит.
     """
     rows = evaluate(samples, scores, thresholds=thresholds)
-    eligible = [row for row in rows if float(row["precision"]) >= min_precision]
+    eligible = [
+        row
+        for row in rows
+        if float(row["precision"]) >= min_precision
+        and float(row["recall"]) >= min_recall
+    ]
     if eligible:
         best = max(eligible, key=lambda row: (float(row["recall"]), float(row["f1"])))
-        return {**best, "note": "точность не ниже требуемой"}
+        return {**best, "note": "точность и полнота не ниже требуемых"}
     best = max(rows, key=lambda row: float(row["f1"]))
-    return {
-        **best,
-        "note": (
-            f"ни один порог не даёт precision >= {min_precision:.0%}: "
-            "фильтр на этом наборе ненадёжен, нужен больше размеченных данных"
-        ),
-    }
+    if float(best["recall"]) == 0:
+        note = "фильтр не ловит ни одной попытки ни при одном пороге"
+    else:
+        note = (
+            f"ни один порог не даёт одновременно precision >= {min_precision:.0%} "
+            f"и recall >= {min_recall:.0%}: фильтр на этом наборе ненадёжен"
+        )
+    return {**best, "note": note}

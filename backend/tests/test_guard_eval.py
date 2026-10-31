@@ -96,6 +96,14 @@ class TestMetrics:
         assert best["precision"] < 0.9
         assert "ненадёжен" in str(best["note"])
 
+    def test_silent_filter_is_not_recommended(self) -> None:
+        """Precision 1.00 при recall 0.00 — не «идеальный» фильтр, а молчащий."""
+        samples = self._samples()
+        scores = [0.1 if sample.label == "injection" else 0.05 for sample in samples]
+        best = choose_threshold(samples, scores, min_precision=0.9, min_recall=0.5)
+        assert float(best["recall"]) == 0.0
+        assert "не ловит" in str(best["note"])
+
     def test_length_mismatch_is_an_error(self) -> None:
         samples = self._samples()[:2]
         with pytest.raises(ValueError):

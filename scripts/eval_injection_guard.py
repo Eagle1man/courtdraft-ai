@@ -165,13 +165,13 @@ def run_ollama(
     )
     print(f"\nподробности: {out}")
 
-    if float(metrics["precision"]) < min_precision:
+    if float(metrics["precision"]) < min_precision or float(metrics["recall"]) < 0.7:
         print(
-            "НЕ ПРОШЛО: на обычных документах слишком много ложных срабатываний — "
+            "НЕ ПРОШЛО: точность или полнота ниже требуемых — "
             "такой фильтр включать рано"
         )
         return 1
-    print("ПРОШЛО по точности: можно рассматривать как временный фильтр")
+    print("ПРОШЛО: можно рассматривать как временный фильтр")
     return 0
 
 
@@ -240,10 +240,13 @@ def run_model(samples, model: str, min_precision: float) -> int:  # noqa: ANN001
     )
     print(f"подробности: {out}")
 
-    if float(best["precision"]) < min_precision:
-        print("НЕ ПРОШЛО: точность ниже требуемой — включать рано")
+    if float(best["precision"]) < min_precision or float(best["recall"]) < 0.7:
+        print(
+            "НЕ ПРОШЛО: нужны precision >= "
+            f"{min_precision:.0%} и recall >= 70% — на этих данных фильтр включать рано"
+        )
         return 1
-    print("ПРОШЛО: порог с приемлемой точностью найден")
+    print("ПРОШЛО: порог с приемлемыми точностью и полнотой найден")
     return 0
 
 
@@ -312,10 +315,10 @@ def main() -> int:
     )
     print(f"примечание: {best['note']}")
 
-    if float(best["precision"]) < args.min_precision:
-        print("НЕ ПРОШЛО: при таком наборе фильтр шумит, включать рано")
+    if float(best["precision"]) < args.min_precision or float(best["recall"]) < 0.7:
+        print("НЕ ПРОШЛО: при таком наборе фильтр шумит или молчит, включать рано")
         return 1
-    print("ПРОШЛО: порог с приемлемой точностью найден")
+    print("ПРОШЛО: порог с приемлемыми точностью и полнотой найден")
     return 0
 
 

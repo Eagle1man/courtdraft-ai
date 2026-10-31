@@ -142,3 +142,7 @@ backend/.cache/
 # скриптом build_injection_dataset.py, в репозиторий не входят.
 data/injection_guard/
 models/
+
+# Машинный перевод открытого набора (xTRam1, MIT): воспроизводится
+# scripts/translate_injection_data.py, в репозиторий не входит.
+data/translated_injections.jsonl
