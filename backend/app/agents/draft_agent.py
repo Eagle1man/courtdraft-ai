@@ -24,9 +24,11 @@ from typing import Any
 
 from app.agents.evidence_pack import EvidencePack
 from app.config import Settings, get_settings
+from app.drafting.numeric_guard import mark_unsourced_amounts
 from app.drafting.section_quality import unusable_reason
 from app.llm import build_llm_provider
 from app.llm.base import LLMMessage, LLMProvider, LLMRequest, LLMRole
+from app.verification.deterministic import check_amounts_by_purpose
 from app.verification.subject_of_proof import proof_gaps
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,7 @@ RULES_BUILT_SECTIONS = frozenset({"operative", "objections", "introductory"})
 #: фразы, поэтому не тратит токены на рассуждение на другом языке и не
 #: описывает свою работу — ей остаётся продолжить заданным голосом.
 SECTION_ANCHORS: dict[str, str] = {
+    "descriptive": "Истец обратился в суд с иском",
     "established": "Суд установил:",
     "motivating": "Разрешая дело, суд исходит из следующего.",
 }
@@ -163,6 +166,74 @@ def _format_participants(pack: EvidencePack) -> str:
     return "; ".join(pack.participants)
 
 
+#: Документы, которые модель обязана видеть целиком.
+#:
+#: Разметка пакета оставляет по одной фразе на признак, и в подсказку
+#: попадали обрывки: «района Хамовники … ул. Пречистенка, д». По ним
+#: нельзя написать ни описательную часть, ни хронологию. Сплошной текст
+#: иска, возражения и расчёта даёт модели связный контекст: кто истец,
+#: кто ответчик, когда договор, сколько передано и сколько возвращено.
+_KEY_DOC_RE = re.compile(
+    r"иск|заявлен|возражен|отзыв|расч[её]т|претенз|договор|расписк",
+    re.IGNORECASE,
+)
+
+#: Бюджет сплошного текста на один запрос, в знаках.
+#:
+#: OLLAMA_NUM_CTX по умолчанию 4096 токенов, и часть уходит на
+#: инструкцию и ответ. Живой прогон (31.10.2026) показал: при 12 000 и
+#: 8 000 знаках документов vikhr-7b теряла задание и отвечала пустым
+#: текстом. Отдаём только те документы, которые нужны разделу.
+FULL_TEXT_BUDGET = 4_000
+FULL_TEXT_PER_DOC = 2_500
+
+#: Какие документы нужны конкретному разделу.
+#:
+#: Правило: разделу отдаётся то, из чего он пишется. Описательная часть
+#: и хронология строятся по иску и расчёту; мотивировочная — по
+#: возражениям и иску. Когда модель получала все шесть документов
+#: сразу, она теряла задание.
+_SECTION_DOCS: dict[str, tuple[str, ...]] = {
+    "descriptive": ("иск", "заявлен", "расч", "договор", "расписк", "претенз"),
+    "established": ("иск", "заявлен", "расч", "договор", "расписк", "претенз"),
+    "motivating": ("возраж", "отзыв", "иск", "заявлен", "расч"),
+}
+
+
+def _full_document_blocks(
+    pack: EvidencePack,
+    section_key: str = "",
+    budget: int = FULL_TEXT_BUDGET,
+    per_doc: int = FULL_TEXT_PER_DOC,
+) -> tuple[list[str], list[str]]:
+    """Сплошные тексты документов, нужных разделу, для подсказки модели."""
+    needles = _SECTION_DOCS.get(section_key, ())
+    blocks: list[str] = []
+    citations: list[str] = []
+    used = 0
+    for name, text in pack.documents.items():
+        if used >= budget:
+            break
+        if not text:
+            continue
+        low = name.lower()
+        if needles:
+            if not any(needle in low for needle in needles):
+                continue
+        elif not _KEY_DOC_RE.search(name):
+            continue
+        chunk = text.strip()
+        room = min(per_doc, budget - used)
+        if room <= 200:
+            break
+        if len(chunk) > room:
+            chunk = chunk[:room].rstrip() + " …"
+        blocks.append(f"[{_document_title(name)}]\n{chunk}")
+        citations.append(name)
+        used += len(chunk)
+    return blocks, citations
+
+
 def build_section_prompt(
     section: dict[str, Any],
     pack: EvidencePack,
@@ -186,6 +257,20 @@ def build_section_prompt(
             for item in pack.by_category(category)[:6]:
                 if item.citation not in citations:
                     citations.append(item.citation)
+
+    # Сплошные тексты ключевых документов. Размеченные фразы выше
+    # отвечают на вопрос «что где сказано», но не дают связного
+    # рассказа о деле. Без него модель не может ни изложить требования
+    # истца, ни выстроить хронологию, и раздел уходит в пометку
+    # «материалы не позволяют подготовить раздел».
+    full_blocks, full_citations = _full_document_blocks(pack, section.get("key", ""))
+    if full_blocks:
+        evidence_blocks.append(
+            "[полные тексты ключевых документов]\n" + "\n\n".join(full_blocks)
+        )
+        for name in full_citations:
+            if name not in citations:
+                citations.append(name)
 
     if pack.gaps:
         evidence_blocks.append(
@@ -219,7 +304,9 @@ def build_section_prompt(
 {chr(10).join(evidence_blocks)}
 
 Сейчас пиши текст раздела «{name}». Не повторяй названия блоков.
-Если сведений не хватает — напиши: {NEEDS_REVIEW}
+Сначала найди нужные сведения в полных текстах документов. Пометку
+«{NEEDS_REVIEW}» ставь только если данных там действительно нет.
+Перечисляй факты, а не названия документов.
 Если нормы права в материале нет — напиши: {NO_LAW_FOUND}"""
 
     return request, citations
@@ -608,6 +695,83 @@ def _build_intro_section(section: dict[str, Any], pack: EvidencePack) -> Section
     )
 
 
+#: Реквизиты и адрес: «119034, г. Москва, ул. Пречистенка, д. 12».
+_NOISE_RE = re.compile(
+    r"(?:г\.|гор\.|ул\.|пр-т|просп\.|пер\.|д\.\s*\d|дом\s+\d|кв\.|корп\.|"
+    r"стр\.|обл\.|р-н|район[ае]?\s|индекс|тел\.|факс|e-?mail|ИНН|ОГРН|КПП|"
+    r"БИК|р/с|к/с|банк)",
+    re.IGNORECASE,
+)
+
+#: Почтовый индекс: шесть цифр подряд. В доводах он не встречается.
+_INDEX_RE = re.compile(r"\b\d{6}\b")
+
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?]+(?=\s|$)")
+
+#: Сокращения, после которых точка не заканчивает предложение.
+#: Без этого «…района Хамовники г. Москвы находится…» резалось после
+#: «г.», и в доводы попадал обрывок «Москвы находится гражданское дело».
+_ABBREVIATIONS = ("г", "ст", "п", "ч", "руб", "коп", "им", "д", "ул", "т", "е")
+
+_WORD_RE = re.compile(r"[А-Яа-яЁёA-Za-z]{2,}")
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Разбить текст на предложения, не разрезая сокращения и инициалы."""
+    parts: list[str] = []
+    start = 0
+    for match in _SENTENCE_SPLIT_RE.finditer(text):
+        before = text[max(0, match.start() - 4): match.start()].lower().strip()
+        tail = before.split()[-1] if before.split() else ""
+        if tail.rstrip(".") in _ABBREVIATIONS:
+            continue
+        # Инициалы: одна заглавная буква перед точкой («Иванов А. П.»).
+        if len(tail) == 1 and tail.isalpha():
+            continue
+        parts.append(text[start: match.end()])
+        start = match.end()
+    tail = text[start:]
+    if tail.strip():
+        parts.append(tail)
+    return parts
+
+
+def _is_requisite_line(fragment: str) -> bool:
+    """Строка состоит из шапки, адреса или реквизитов, а не из довода."""
+    if _INDEX_RE.search(fragment):
+        return True
+    if _NOISE_RE.search(fragment):
+        return True
+    # «г. Москва, ул. Ленина, 5» после отбрасывания коротких слов
+    # оставляет мало настоящих слов — такой строке в доводах не место.
+    return len(_WORD_RE.findall(fragment)) < 4
+
+
+def _objection_fragments(text: str) -> list[str]:
+    """Выбрать из текста возражения фразы, которые являются доводами.
+
+    Раньше в раздел попадал весь элемент разметки целиком, и вместе с
+    доводом там оказывался адрес суда («района Хамовники … ул.
+    Пречистенка, д»). Для судьи это мусор: довод — это утверждение о
+    факте или просьба, а не шапка документа.
+
+    Фильтр работает по исключению, а не по списку ключевых слов:
+    «Договор расторгнут по соглашению сторон» — настоящий довод, хотя
+    слова «не согласен» в нём нет. Отбрасывается только то, что
+    заведомо не является доводом: адрес, индекс, реквизиты, слишком
+    короткая строка.
+    """
+    fragments: list[str] = []
+    for raw in _split_sentences((text or "").replace("\n", " ")):
+        fragment = raw.strip().strip("«»\"' \t")
+        if len(fragment) < 25:
+            continue
+        if _is_requisite_line(fragment):
+            continue
+        fragments.append(fragment)
+    return fragments
+
+
 def _build_objections_section(
     section: dict[str, Any], pack: EvidencePack
 ) -> SectionDraft:
@@ -643,16 +807,45 @@ def _build_objections_section(
 
     paragraphs: list[str] = []
     citations: list[str] = []
-    for item in objections:
-        paragraphs.append(
-            f"{_document_title(item.source_document)}: «{item.text}»"
-        )
-        if item.source_document and item.source_document not in citations:
-            citations.append(item.source_document)
+    seen: set[str] = set()
 
-    text = "\n\n".join(paragraphs)
+    for item in objections:
+        for fragment in _objection_fragments(item.text):
+            key = re.sub(r"\W+", "", fragment.lower())
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            paragraphs.append(
+                f"{len(paragraphs) + 1}. "
+                f"{_document_title(item.source_document)}: «{fragment}»"
+            )
+            if item.source_document and item.source_document not in citations:
+                citations.append(item.source_document)
+            if len(paragraphs) >= 7:
+                break
+        if len(paragraphs) >= 7:
+            break
+
+    if not paragraphs:
+        # Возражения есть, но все строки оказались реквизитами и шапкой
+        # документа. Честнее сказать это прямо, чем показывать адрес
+        # суда как «довод ответчика».
+        return SectionDraft(
+            key=section["key"],
+            name=section["name"],
+            text=(
+                "В материалах дела есть отзыв ответчика, но его доводы "
+                "не удалось выделить: документ содержит только реквизиты "
+                f"и шапку. Требуется прочитать отзыв: {NEEDS_REVIEW}"
+            ),
+            is_mock=False,
+            needs_review=True,
+            built_by="rules",
+        )
+
+    text = "\n".join(paragraphs)
     text += (
-        "\n\nДоводы приведены дословно из материалов дела. Оценка доводов "
+        "\n\nДоводы приведены из материалов дела. Оценка доводов "
         "судом не производилась."
     )
     return SectionDraft(
@@ -818,10 +1011,38 @@ async def generate_draft(
             candidate, candidate_review = _postprocess(response.text, section)
             bad = unusable_reason(candidate)
             if not bad:
-                text = candidate
-                needs_review = candidate_review
+                # Суммы из текста сверяются с материалами до того, как
+                # раздел попадёт в проект. Выдуманное число нельзя
+                # показывать судье без пометки: на живом прогоне модель
+                # дописала 6 470 руб. расходов на представителя, которых
+                # в деле не было ни в одном документе.
+                marked, unsourced = mark_unsourced_amounts(
+                    candidate,
+                    pack.documents.values(),
+                    pack.amounts,
+                )
+                text = marked
+                needs_review = candidate_review or bool(unsourced)
                 is_mock = response.is_mock
                 error = ""
+                for amount in unsourced:
+                    gaps.append(
+                        f"сумма {amount.raw} руб. не найдена в материалах дела"
+                    )
+                # Сумма может быть в деле, но относиться к другому
+                # требованию («проценты 80 000» вместо «долг 80 000»).
+                # Проверка «число встречается» такое пропускает, поэтому
+                # назначение сверяется отдельно.
+                wrong_purpose = [
+                    finding
+                    for finding in check_amounts_by_purpose(
+                        candidate, pack.documents.values()
+                    )
+                    if finding.check_id == "AMOUNT_WRONG_PURPOSE"
+                ]
+                for finding in wrong_purpose:
+                    gaps.append(finding.reason)
+                needs_review = needs_review or bool(wrong_purpose)
                 break
             reason = bad
             logger.info(

@@ -560,3 +560,79 @@ class AuditEntry(TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<AuditEntry #{self.id} {self.action} by={self.actor}>"
+
+
+# ── Отзывы пользователей (обучение и улучшение) ────────────────────────────
+
+
+class FeedbackVerdict(StrEnum):
+    """Итоговая оценка проекта человеком.
+
+    Три состояния, а не свободный текст: по ним можно считать статистику
+    и строить выборку для дообучения. Свободное мнение остаётся в comment.
+    """
+
+    ACCEPTED = "ACCEPTED"        # проект можно брать в работу
+    NEEDS_WORK = "NEEDS_WORK"    # нужна доработка
+    REJECTED = "REJECTED"        # непригодно
+
+
+class FeedbackAuthorRole(StrEnum):
+    """Кто оставил отзыв. Для вуза важны студенты и преподаватели."""
+
+    STUDENT = "student"
+    TEACHER = "teacher"
+    JUDGE = "judge"
+    SECRETARY = "secretary"
+    OTHER = "other"
+
+
+class Feedback(TimestampMixin, Base):
+    """Отзыв о проекте судебного акта.
+
+    Зачем отдельная таблица, а не FeedbackSample: для дообучения нужна
+    пара «что показала модель» → «как оценил человек», привязанная к делу,
+    разделу и версии проекта. FeedbackSample хранит только пару текстов
+    без контекста, и восстановить по нему, к какому делу относится правка,
+    невозможно.
+
+    draft_text — снимок проекта на момент отзыва. Проект перегенерируют,
+    и без снимка оценка «стала хуже» повисает без evidence.
+    """
+
+    __tablename__ = "feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    # SET NULL, а не CASCADE: отзыв — самостоятельная ценность для обучения
+    # и не должен исчезать вместе с делом.
+    case_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("drafts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    draft_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Оценка 1..5 и итоговый вердикт. Оба поля обязательны: звёзды дают
+    # «насколько», вердикт — «что с этим делать».
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    verdict: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=FeedbackVerdict.NEEDS_WORK.value, index=True
+    )
+    # Пусто = отзыв о проекте целиком; иначе — о конкретном разделе.
+    section_name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    comment: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    author_role: Mapped[str] = mapped_column(
+        String(30), nullable=False, default=FeedbackAuthorRole.OTHER.value, index=True
+    )
+    author_name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+
+    # Какой моделью сформирован проект: без этого нельзя сравнить качество
+    # версий модели между собой.
+    model_name: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    draft_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    is_anonymized: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<Feedback {self.rating}/5 {self.verdict} role={self.author_role}>"

@@ -133,6 +133,30 @@ class TestSectionPrompt:
         prompt, _ = build_section_prompt(TEMPLATE["sections"][0], pack)
         assert "150000" in prompt
 
+    def test_full_document_text_is_passed(self) -> None:
+        """Ключевые документы идут в подсказку целиком.
+
+        Раньше модель видела только размеченные фразы, и описательная
+        часть оставалась пустой: связного рассказа о деле в подсказке
+        не было вовсе.
+        """
+        pack = make_pack()
+        pack.documents["иск.docx"] = (
+            "Истец Смирнова О.В. просит взыскать долг 80 000 руб. "
+            "Договор займа заключён 10.02.2024."
+        )
+        prompt, citations = build_section_prompt(TEMPLATE["sections"][1], pack)
+        assert "Договор займа заключён 10.02.2024" in prompt
+        assert "иск.docx" in citations
+
+    def test_full_text_is_bounded(self) -> None:
+        """Сплошной текст не вытесняет инструкцию из контекста модели."""
+        pack = make_pack()
+        pack.documents["иск.docx"] = "Слово. " * 5000
+        prompt, _ = build_section_prompt(TEMPLATE["sections"][1], pack)
+        assert len(prompt) < 20_000
+        assert "Напиши раздел" in prompt
+
 
 class TestPostprocess:
     def test_strips_repeated_heading(self) -> None:

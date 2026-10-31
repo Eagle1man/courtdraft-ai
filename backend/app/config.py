@@ -177,6 +177,16 @@ class Settings(BaseSettings):
         return self.llm_provider is not LLMProviderName.MOCK
 
     @property
+    def originals_dir(self) -> Path:
+        """Каталог оригиналов файлов дел.
+
+        Выводится из storage_dir, а не задаётся отдельно: иначе данные
+        и их оригиналы могли бы оказаться на разных дисках, и перенос
+        дела стал бы двумя несогласованными операциями.
+        """
+        return Path(self.storage_dir) / "originals"
+
+    @property
     def cors_origin_list(self) -> list[str]:
         """Разобранный список Origins.
 

@@ -108,3 +108,34 @@ class TestObjectionsSection:
         section = result.sections[0]
         for marker in ("не соответствует действительности", "отклоняются", "несостоятель"):
             assert marker not in section.text.lower()
+
+    def test_address_is_not_shown_as_objection(self) -> None:
+        """Шапка и адрес документа — не довод ответчика.
+
+        На живом прогоне раздел начинался строкой «района Хамовники
+        г. Москвы 119034, г. Москва, ул. Пречистенка, д» — это адрес
+        суда из шапки отзыва, а не возражение.
+        """
+        pack = EvidencePack(case_number="T-0002")
+        pack.items.append(
+            EvidenceItem(
+                category="objections",
+                text=(
+                    "района Хамовники г. Москвы 119034, г. Москва, "
+                    "ул. Пречистенка, д. 12. "
+                    "С предъявленными требованиями не согласен частично: "
+                    "передал истцу 20 000 руб. наличными."
+                ),
+                source_document="02_response.txt",
+                source_type="RESPONSE",
+                order=1,
+            )
+        )
+        result = asyncio.run(
+            generate_draft(pack, TEMPLATE, provider=_NoLLM())
+        )
+        text = result.sections[0].text
+        assert "Пречистенка" not in text
+        assert "119034" not in text
+        assert "не согласен частично" in text
+        assert "20 000 руб." in text

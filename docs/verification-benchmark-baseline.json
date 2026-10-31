@@ -1,0 +1,18 @@
+{
+  "resolution": {
+    "checks": 25,
+    "fixtures": 45,
+    "clean": 14,
+    "expected": 31,
+    "found": 31,
+    "false_positive": 0
+  },
+  "amounts": {
+    "cases": 4,
+    "correct": 4
+  },
+  "jurisdiction": {
+    "cases": 5,
+    "correct": 5
+  }
+}

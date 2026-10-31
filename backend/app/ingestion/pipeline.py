@@ -31,6 +31,7 @@ from app.ingestion.extract import (
 )
 from app.models.entities import CaseDocument, DocumentChunk
 from app.rag.store import CollectionName, VectorStore
+from app.storage.case_files import StorageError, save_original
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,22 @@ async def ingest_document(
     # ── 4. Классификация ─────────────────────────────────────────────
     resolved_type = document_type or guess_document_type(filename, extracted.text)
 
-    # ── 5. Сохранение документа ──────────────────────────────────────
+    # ── 5. Сохранение оригинала ──────────────────────────────────────
+    # Оригинал кладём на диск до записи в базу: суду нужен исходный файл
+    # с подписями и печатями, а не только извлечённый текст. Если диск
+    # недоступен — это предупреждение, а не отказ: текст уже извлечён,
+    # и терять его из-за отсутствия копии неправильно.
+    original_path = ""
+    try:
+        original_path = save_original(cfg, case_id, sha256, filename, data)
+    except (StorageError, OSError) as exc:  # noqa: PERF203
+        warnings.append(
+            f"{filename}: оригинал не сохранён ({str(exc)[:120]}). "
+            f"Текст извлечён и доступен, но исходный файл скачать нельзя."
+        )
+        logger.warning("Оригинал не сохранён для %s: %s", filename, exc)
+
+    # ── 6. Сохранение документа ──────────────────────────────────────
     document = await documents.add(
         CaseDocument(
             case_id=case_id,
@@ -130,7 +146,12 @@ async def ingest_document(
             mime_type=mime_type or str(extracted.metadata.get("detected_mime_type", "")),
             page_count=extracted.page_count,
             text=extracted.text,
-            metadata_json={**extracted.metadata, "ingested_at": started.isoformat()},
+            metadata_json={
+                **extracted.metadata,
+                "ingested_at": started.isoformat(),
+                "original_path": original_path,
+                "original_size": len(data),
+            },
             sha256=sha256,
         )
     )

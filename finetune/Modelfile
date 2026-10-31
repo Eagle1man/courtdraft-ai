@@ -1,0 +1,17 @@
+FROM ./vikhr-7b-qd.Q4_K_M.gguf
+
+# Параметры генерации
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 4096
+PARAMETER num_predict 512
+
+# Шаблон чата (Llama-2/инстурктовый стиль). 
+# Если после конвертации GGUF уже содержит правильный template — можно удалить эту секцию.
+# TEMPLATE берётся из chat_template оригинальной модели при конвертации через llama.cpp,
+# проверь на тестовом промпте после `ollama create`.
+TEMPLATE """[INST] {{ .Prompt }} [/INST]"""
+
+SYSTEM """Ты — ассистент для работы с судебными документами. Отвечай кратко, по делу, на русском языке."""

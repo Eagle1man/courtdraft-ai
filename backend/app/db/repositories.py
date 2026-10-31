@@ -26,6 +26,7 @@ from app.models.entities import (
     Draft,
     DraftVersion,
     EvidenceItem,
+    Feedback,
     Verification,
 )
 
@@ -371,6 +372,94 @@ class AuditRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+
+class FeedbackRepository:
+    """Отзывы пользователей о проекте акта."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, feedback: Feedback) -> Feedback:
+        self._session.add(feedback)
+        await self._session.flush()
+        return feedback
+
+    async def get(self, feedback_id: uuid.UUID) -> Feedback | None:
+        return await self._session.get(Feedback, feedback_id)
+
+    async def list(
+        self,
+        *,
+        case_id: uuid.UUID | None = None,
+        verdict: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Feedback]:
+        stmt = select(Feedback).order_by(Feedback.created_at.desc())
+        if case_id is not None:
+            stmt = stmt.where(Feedback.case_id == case_id)
+        if verdict:
+            stmt = stmt.where(Feedback.verdict == verdict)
+        stmt = stmt.limit(limit).offset(offset)
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    async def count(
+        self, *, case_id: uuid.UUID | None = None, verdict: str | None = None
+    ) -> int:
+        stmt = select(func.count()).select_from(Feedback)
+        if case_id is not None:
+            stmt = stmt.where(Feedback.case_id == case_id)
+        if verdict:
+            stmt = stmt.where(Feedback.verdict == verdict)
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
+
+    async def stats(self, *, case_id: uuid.UUID | None = None) -> dict[str, Any]:
+        """Сводка: сколько отзывов, средняя оценка, разбивка по вердиктам.
+
+        Считается в базе, а не в интерфейсе: на выгрузке в тысячи строк
+        клиент не должен тянуть их все ради среднего.
+        """
+        base = select(func.count()).select_from(Feedback)
+        avg_stmt = select(func.avg(Feedback.rating)).select_from(Feedback)
+        if case_id is not None:
+            base = base.where(Feedback.case_id == case_id)
+            avg_stmt = avg_stmt.where(Feedback.case_id == case_id)
+
+        total = int((await self._session.execute(base)).scalar_one())
+        average = (await self._session.execute(avg_stmt)).scalar_one()
+
+        by_verdict: dict[str, int] = {}
+        verdict_stmt = select(Feedback.verdict, func.count()).group_by(Feedback.verdict)
+        if case_id is not None:
+            verdict_stmt = verdict_stmt.where(Feedback.case_id == case_id)
+        for verdict, count in (await self._session.execute(verdict_stmt)).all():
+            by_verdict[str(verdict)] = int(count)
+
+        by_role: dict[str, int] = {}
+        role_stmt = select(Feedback.author_role, func.count()).group_by(
+            Feedback.author_role
+        )
+        if case_id is not None:
+            role_stmt = role_stmt.where(Feedback.case_id == case_id)
+        for role, count in (await self._session.execute(role_stmt)).all():
+            by_role[str(role)] = int(count)
+
+        return {
+            "total": total,
+            "average_rating": round(float(average), 2) if average is not None else 0.0,
+            "by_verdict": by_verdict,
+            "by_role": by_role,
+        }
+
+    async def delete(self, feedback_id: uuid.UUID) -> bool:
+        feedback = await self.get(feedback_id)
+        if feedback is None:
+            return False
+        await self._session.delete(feedback)
+        await self._session.flush()
+        return True
 
 
 def new_case(case_number: str, court_name: str, case_type: str, **extra: Any) -> dict[str, Any]:

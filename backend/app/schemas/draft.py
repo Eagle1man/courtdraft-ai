@@ -60,6 +60,12 @@ class VerificationOut(BaseModel):
     claims_checked: int = 0
     unsupported_claims: int = 0
     sections_checked: int = 0
+    #: Отчёт относится к другой версии документа: применять его нельзя,
+    #: нужна повторная проверка (ТЗ §16).
+    is_stale: bool = False
+    #: Статус документа по правилам ТЗ §14: VERIFIED_WITHIN_SCOPE,
+    #: REVIEW_REQUIRED, BLOCKED, VERIFICATION_FAILED.
+    document_status: str = ""
 
 
 class DraftVersionOut(BaseModel):

@@ -17,6 +17,10 @@
 
 const API = "";              // тот же origin: интерфейс раздаётся бэкендом
 const POLL_INTERVAL = 3000;
+// Версия сборки интерфейса. Должна совпадать с ?v= в index.html:
+// браузер кэширует app.js по этому адресу, и при неизменном ?v он
+// продолжает показывать старый файл, даже когда на сервере новый.
+const UI_BUILD = "0.4.0";
 
 const state = {
   cases: [],
@@ -24,6 +28,8 @@ const state = {
   documents: [],
   draft: null,
   jobTimer: null,
+  loadingCaseId: null,
+  loadSeq: 0,
 };
 
 /* ── Работа с API ─────────────────────────────────────────────── */
@@ -201,7 +207,10 @@ function renderSteps() {
 async function loadHealth() {
   try {
     const info = await api("/api/info");
-    $("app-ver").textContent = info.version ? `версия ${info.version}` : "";
+    $("app-ver").textContent = info.version
+      ? `версия ${info.version} · интерфейс ${UI_BUILD}`
+      : "";
+    console.info(`CourtDraft UI ${UI_BUILD}`);
     if (info.llm_provider === "mock") {
       $("health").textContent = "демонстрационный режим";
       showDemoBanner();
@@ -274,7 +283,9 @@ async function loadCases() {
       `<div class="num">${escapeHtml(item.case_number)}</div>` +
       `<div class="court">${escapeHtml(item.court_name)}</div>` +
       `<div class="row">${chips.join("")}</div>`;
-    card.onclick = () => selectCase(item.id);
+    card.onclick = () => {
+      selectCase(item.id);
+    };
     list.appendChild(card);
   });
 
@@ -282,11 +293,57 @@ async function loadCases() {
 }
 
 async function selectCase(caseId) {
+  const seq = ++state.loadSeq;
+  // Жёстко сбрасываем состояние предыдущего дела, чтобы не было подмешивания
+  if (state.jobTimer) {
+    clearInterval(state.jobTimer);
+    state.jobTimer = null;
+  }
+  show($("progress"), false);
+  $("progress-fill").classList.remove("busy");
+  $("progress-fill").style.width = "8%";
+  $("btn-generate").disabled = true;
+
+  state.loadingCaseId = caseId;
   state.currentCase = caseId;
+  state.documents = [];
+  state.draft = null;
+
+  // Сбрасываем вьюху проекта
+  resetDraftView();
+  // Закрываем просмотр документа: иначе поверх нового дела остаётся
+  // открытым документ предыдущего, и выглядит это как «данные смешались».
+  show($("doc-viewer"), false);
+  $("edit-author").value = "judge";
+  $("sections").innerHTML = '<p class="muted">Загрузка...</p>';
+  $("doc-list").innerHTML = '<li class="muted">Загрузка...</li>';
+  $("source-list").innerHTML = "";
+  $("version-list").innerHTML = "";
+  $("edit-text").value = "";
+  $("edit-comment").value = "";
+  $("m-sections").textContent = "0";
+  $("m-issues").textContent = "0";
+  $("m-sources").textContent = "0";
+  $("m-versions").textContent = "0";
+  $("metric-issues").classList.remove("alert");
+  $("verdict").textContent = "";
+  show($("sources"), false);
+  show($("versions"), false);
+  show($("verification"), false);
+  show($("metrics"), false);
+  show($("btn-download"), false);
+  show($("editor"), false);
+
   await loadCases();
+  if (seq !== state.loadSeq) return;
+  if (state.loadingCaseId !== caseId || state.currentCase !== caseId) return;
   await loadDocuments();
+  if (seq !== state.loadSeq) return;
+  if (state.loadingCaseId !== caseId || state.currentCase !== caseId) return;
   await loadDraft();
-  $("btn-generate").disabled = false;
+  if (seq !== state.loadSeq) return;
+  if (state.loadingCaseId !== caseId || state.currentCase !== caseId) return;
+  $("btn-generate").disabled = !(state.currentCase && state.documents.length > 0);
   renderSteps();
 }
 
@@ -365,7 +422,10 @@ function updateDocsLabel() {
 
 async function loadDocuments() {
   const list = $("doc-list");
-  if (!state.currentCase) {
+  const caseId = state.currentCase || state.loadingCaseId;
+  const seq = state.loadSeq;
+
+  if (!caseId) {
     state.documents = [];
     list.innerHTML = '<li class="muted">Дело не выбрано</li>';
     updateDocsLabel();
@@ -374,9 +434,15 @@ async function loadDocuments() {
   }
 
   try {
-    state.documents = await api(`/api/cases/${state.currentCase}/documents`);
+    const docs = await api(`/api/cases/${caseId}/documents`);
+    if (seq !== state.loadSeq) return;
+    if (caseId !== state.currentCase || state.loadingCaseId !== caseId) return;
+    state.documents = docs;
   } catch (error) {
+    if (seq !== state.loadSeq) return;
+    if (caseId !== state.currentCase || state.loadingCaseId !== caseId) return;
     list.innerHTML = `<li class="muted">${escapeHtml(error.message)}</li>`;
+    updateDocsLabel();
     renderSteps();
     return;
   }
@@ -550,14 +616,14 @@ async function generate() {
       method: "POST",
       body: JSON.stringify({ actor: "judge" }),
     });
-    pollJob(job.job_id);
+    pollJob(job.job_id, state.currentCase);
   } catch (error) {
     stopProgress();
     showAlert(`Не удалось запустить формирование: ${error.message}`);
   }
 }
 
-function pollJob(jobId) {
+function pollJob(jobId, caseId) {
   clearInterval(state.jobTimer);
 
   // Прогресс оценочный: бэкенд не сообщает процент готовности,
@@ -566,11 +632,22 @@ function pollJob(jobId) {
   let ticks = 0;
 
   state.jobTimer = setInterval(async () => {
+    // Пользователь мог переключиться на другое дело, пока шла генерация:
+    // тогда опрос этого дела больше не нужен и его результат не должен
+    // перерисовать чужую карточку.
+    if (caseId && state.currentCase !== caseId) {
+      stopProgress();
+      return;
+    }
     ticks += 1;
     $("progress-fill").style.width = `${Math.min(92, 8 + ticks * 4)}%`;
 
     try {
       const job = await api(`/api/jobs/${jobId}`);
+      if (caseId && state.currentCase !== caseId) {
+        stopProgress();
+        return;
+      }
       $("progress-text").textContent = describeState(job.state, ticks);
 
       if (job.state === "DONE") {
@@ -610,9 +687,18 @@ function stopProgress() {
 
 function resetDraftView() {
   $("draft-title").textContent = "Проект не сформирован";
-  $("draft-status").hidden = true;
+  const statusChip = $("draft-status");
+  statusChip.hidden = true;
+  statusChip.textContent = "";
+  statusChip.className = "chip";
   $("draft-meta").textContent =
     "Нажмите «Сформировать проект». Это займёт две-три минуты.";
+  $("m-sections").textContent = "0";
+  $("m-issues").textContent = "0";
+  $("metric-issues").classList.remove("alert");
+  $("verdict").textContent = "";
+  $("m-sources").textContent = "0";
+  $("m-versions").textContent = "0";
   show($("metrics"), false);
   show($("verification"), false);
   show($("sources"), false);
@@ -621,10 +707,15 @@ function resetDraftView() {
   show($("btn-download"), false);
   $("sections").innerHTML =
     '<p class="muted">Разделы проекта появятся здесь.</p>';
+  $("source-list").innerHTML = "";
+  $("version-list").innerHTML = "";
 }
 
 async function loadDraft() {
-  if (!state.currentCase) {
+  const caseId = state.currentCase || state.loadingCaseId;
+  const seq = state.loadSeq;
+
+  if (!caseId) {
     state.draft = null;
     resetDraftView();
     renderSteps();
@@ -633,14 +724,17 @@ async function loadDraft() {
 
   let draft;
   try {
-    draft = await api(`/api/cases/${state.currentCase}/draft`);
+    draft = await api(`/api/cases/${caseId}/draft`);
   } catch (error) {
+    if (seq !== state.loadSeq) return;
+    if (caseId !== state.currentCase || state.loadingCaseId !== caseId) return;
     showAlert(`Не удалось получить проект: ${error.message}`);
     return;
   }
 
+  if (seq !== state.loadSeq) return;
+  if (caseId !== state.currentCase || state.loadingCaseId !== caseId) return; // Переключились на другое дело — игнорируем ответ
   state.draft = draft;
-
   if (!draft) {
     resetDraftView();
     renderSteps();
@@ -659,19 +753,19 @@ async function loadDraft() {
   statusChip.className = "chip " + (verified ? "green" : draft.status === "REJECTED" ? "red" : "amber");
 
   $("draft-meta").textContent =
-    `версия ${draft.current_version} · разделов ${draft.sections.length} · ` +
-    `источников ${draft.sources.length}`;
+    `версия ${draft.current_version} · разделов ${(draft.sections || []).length} · ` +
+    `источников ${(draft.sources || []).length}`;
 
   show($("metrics"), true);
   show($("btn-download"), true);
-  $("m-sections").textContent = formatNum(draft.sections.length);
+  $("m-sections").textContent = formatNum((draft.sections || []).length);
 
   renderSections(draft);
   renderVerification(draft.verification);
-  renderSources(draft.sources);
+  renderSources(draft.sources || []);
   await loadVersions();
 
-  $("edit-text").value = draft.text;
+  $("edit-text").value = draft.text || "";
   show($("editor"), true);
   renderSteps();
 }
@@ -704,7 +798,7 @@ function renderSections(draft) {
     );
   };
 
-  draft.sections.forEach((section, index) => {
+  (draft.sections || []).forEach((section, index) => {
     matched[section.name] = true;
     const ownIssues = bySection[section.name] || [];
 
@@ -729,7 +823,7 @@ function renderSections(draft) {
       `<div class="sh"><span class="no">${index + 1}</span>` +
       `<span class="st">${escapeHtml(section.name)}</span>` +
       `${chips.join("")}</div>` +
-      `<div class="body">${gaps}<div class="txt">${escapeHtml(section.text)}</div>` +
+      `<div class="body">${gaps}<div class="txt">${escapeHtml(section.text || "")}</div>` +
       ownIssues.map(remarkHtml).join("") +
       (section.citations && section.citations.length
         ? `<div class="cites">Источники: ${escapeHtml(section.citations.join(", "))}</div>`
@@ -754,7 +848,7 @@ function renderSections(draft) {
     box.appendChild(rest);
   }
 
-  if (draft.sections.some((s) => (s.text || "").includes(NEEDS_REVIEW))) {
+  if ((draft.sections || []).some((s) => (s.text || "").includes(NEEDS_REVIEW))) {
     const note = document.createElement("p");
     note.className = "muted small";
     note.textContent =
@@ -822,15 +916,18 @@ function renderSources(sources) {
 }
 
 async function loadVersions() {
-  if (!state.draft) return;
+  const caseId = state.currentCase;
+  if (!state.draft || !caseId) return;
 
   let data;
   try {
-    data = await api(`/api/cases/${state.currentCase}/draft/versions`);
+    data = await api(`/api/cases/${caseId}/draft/versions`);
   } catch {
+    if (caseId !== state.currentCase) return;
     show($("versions"), false);
     return;
   }
+  if (caseId !== state.currentCase || !state.draft) return;
 
   const list = $("version-list");
   list.innerHTML = "";

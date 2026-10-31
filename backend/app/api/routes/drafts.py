@@ -47,6 +47,7 @@ from app.schemas.draft import (
 from app.services.case_service import db, session_scope
 from app.services.draft_service import CaseNotReadyError, DraftService
 from app.services.jobs import JobState, jobs
+from app.verification.contracts import DocumentStatus, from_legacy_status
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,18 @@ def _draft_out(
             item.to_dict() if hasattr(item, "to_dict") else item
             for item in verification.issues
         ]
+        # Отчёт действителен только для той версии, которую проверяли.
+        # Ручная правка создаёт новую версию, и старый отчёт к ней не
+        # относится — интерфейс должен это показать, а не выдавать
+        # прежние «замечаний нет» за состояние нового текста.
+        # Свежий отчёт синхронной генерации (wait=true) ещё не записи в
+        # базе и номера версии не несёт: он по определению относится к
+        # только что созданной версии.
+        report_version = getattr(verification, "draft_version", draft.current_version)
+        stale = report_version != draft.current_version
+        document_status = DocumentStatus.REVIEW_REQUIRED if stale else from_legacy_status(
+            verification.status
+        )
         verification_out = VerificationOut(
             status=verification.status,
             issues=[
@@ -185,6 +198,8 @@ def _draft_out(
             claims_checked=verification.claims_checked,
             unsupported_claims=verification.unsupported_claims,
             sections_checked=verification.sections_checked,
+            is_stale=stale,
+            document_status=document_status.value,
         )
 
     return DraftOut(
@@ -496,3 +511,62 @@ async def set_status(
     # verifications), чтобы refresh не вливал их заново без необходимости.
     await session.refresh(draft)
     return _draft_out(draft, version, verification)
+
+
+@router.get("/drafts/{draft_id}/claims")
+async def get_draft_claims(
+    draft_id: uuid.UUID, session: SessionDep
+) -> dict[str, object]:
+    """GET /api/drafts/{id}/claims — утверждения проекта с источниками.
+
+    Судья видит не только текст, но и чем подтверждено каждое
+    утверждение. Утверждение без источника получает явный статус, а не
+    выглядит подтверждённым. Ответ аддитивный: остальные эндпоинты не
+    меняются.
+    """
+    from decimal import Decimal
+
+    from app.drafting.requirements import extract_requirements
+    from app.verification.claims import (
+        build_claims,
+        check_completeness,
+        summarize_claims,
+    )
+    from app.verification.contracts import text_checksum
+
+    service = DraftService(session)
+    draft = await service.drafts.get(draft_id)
+    if draft is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Проект не найден"
+        )
+
+    versions = await service.list_versions(draft_id)
+    if not versions:
+        return {
+            "draft_id": str(draft_id),
+            "version": 0,
+            "text_sha256": "",
+            "summary": summarize_claims([]),
+            "claims": [],
+        }
+
+    version = versions[-1]
+    documents = await service.documents.list_for_case(draft.case_id)
+    texts = {document.filename: document.text for document in documents}
+    claims = build_claims(version.text, texts, section=f"v{version.version}")
+
+    # Полнота: требования из материалов, не отражённые в проекте.
+    pack = await service.build_pack(draft.case_id)
+    money, _others, _unrecognised = extract_requirements(pack)
+    amounts = [Decimal(str(claim.amount)) for claim in money if claim.amount is not None]
+    missing = check_completeness(version.text, amounts)
+
+    all_claims = claims + missing
+    return {
+        "draft_id": str(draft_id),
+        "version": version.version,
+        "text_sha256": text_checksum(version.text),
+        "summary": summarize_claims(all_claims),
+        "claims": [claim.model_dump(mode="json") for claim in all_claims],
+    }
