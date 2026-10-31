@@ -513,6 +513,37 @@ async def set_status(
     return _draft_out(draft, version, verification)
 
 
+@router.post("/drafts/{draft_id}/reverify", response_model=VerificationOut)
+async def reverify_draft(
+    draft_id: uuid.UUID, session: SessionDep
+) -> VerificationOut:
+    """POST /api/drafts/{id}/reverify — проверить сохранённый текст заново.
+
+    Нужен после ручной правки: старый отчёт к новой версии не относится.
+    Статус здесь не переносится и не наследуется — он считается из
+    свежего отчёта, и «исправлено» без проверки не появляется.
+    """
+    service = DraftService(session)
+    try:
+        draft, version, record, _report = await service.reverify(draft_id)
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Проект не найден"
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    verification = _draft_out(draft, version, record).verification
+    if verification is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Отчёт проверки не сформирован",
+        )
+    return verification
+
+
 @router.get("/drafts/{draft_id}/claims")
 async def get_draft_claims(
     draft_id: uuid.UUID, session: SessionDep

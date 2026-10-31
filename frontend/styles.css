@@ -539,6 +539,15 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .verify.ok { border-color: var(--green-line); background: var(--green-bg); color: var(--green); }
 .verify.bad { border-color: var(--red-line); background: var(--red-bg); color: #8d1c13; }
 
+/* Отчёт прежней версии: текст изменён, проверки не было. Пунктир —
+ * признак «это не действующий отчёт», а не просто ещё одно замечание. */
+.verify.stale {
+  border-style: dashed;
+  border-color: var(--bronze-line);
+  background: #fbfaf7;
+  color: var(--bronze);
+}
+
 /* ── Разделы проекта ───────────────────────────────────────────── */
 
 .sections { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 11px; }

@@ -1089,3 +1089,84 @@ class TestDraftClaimsEndpoint:
     async def test_unknown_draft_is_404(self, api_client: AsyncClient) -> None:
         response = await api_client.get(f"/api/drafts/{uuid.uuid4()}/claims")
         assert response.status_code == 404
+
+
+class TestReverifyAfterEdit:
+    """Этап 8: повторная проверка после правки.
+
+    Правило: исправление не повышает статус само по себе. Ручная правка
+    делает старый отчёт устаревшим, а новый появляется только из
+    проверки — и не подтверждает выдуманную сумму.
+    """
+
+    async def test_manual_edit_makes_report_stale_and_reverify_refreshes(
+        self, api_client: AsyncClient
+    ) -> None:
+        case_id = await _make_case_with_documents(api_client)
+        draft = await _generate_sync(api_client, case_id)
+
+        edited = await api_client.post(
+            f"/api/drafts/{draft['id']}/versions",
+            json={
+                "text": (
+                    "РЕШИЛ:\n\nВзыскать с ответчика задолженность "
+                    "в размере 150 000 руб."
+                ),
+                "author": "judge",
+                "comment": "правка перед проверкой",
+            },
+        )
+        assert edited.status_code == 201, edited.text
+
+        stale = (await api_client.get(f"/api/cases/{case_id}/draft")).json()
+        assert stale["verification"]["is_stale"] is True
+        # Устаревший отчёт не считается «проверенным»: статус документа
+        # переводится в «нужна проверка», а не остаётся прежним.
+        assert stale["verification"]["document_status"] == "REVIEW_REQUIRED"
+
+        fresh = await api_client.post(f"/api/drafts/{draft['id']}/reverify")
+        assert fresh.status_code == 200, fresh.text
+        body = fresh.json()
+        assert body["is_stale"] is False
+        assert body["document_status"] in {
+            "VERIFIED_WITHIN_SCOPE",
+            "REVIEW_REQUIRED",
+            "BLOCKED",
+            "VERIFICATION_FAILED",
+        }
+
+        reread = (await api_client.get(f"/api/cases/{case_id}/draft")).json()
+        assert reread["verification"]["is_stale"] is False
+        assert reread["verification"]["document_status"] == body["document_status"]
+
+    async def test_reverify_does_not_confirm_invented_amount(
+        self, api_client: AsyncClient
+    ) -> None:
+        """Сумма, которой нет в материалах, не становится подтверждённой."""
+        case_id = await _make_case_with_documents(api_client)
+        draft = await _generate_sync(api_client, case_id)
+
+        edited = await api_client.post(
+            f"/api/drafts/{draft['id']}/versions",
+            json={
+                "text": (
+                    "РЕШИЛ:\n\nВзыскать с ответчика задолженность "
+                    "в размере 999 999 руб."
+                ),
+                "author": "judge",
+                "comment": "внесена сумма, которой нет в деле",
+            },
+        )
+        assert edited.status_code == 201, edited.text
+
+        body = (await api_client.post(f"/api/drafts/{draft['id']}/reverify")).json()
+        assert body["document_status"] != "VERIFIED_WITHIN_SCOPE"
+        assert body["issues"], "выдуманная сумма не дала ни одного замечания"
+        assert any(
+            "999" in f"{issue.get('reason', '')} {issue.get('text', '')}"
+            for issue in body["issues"]
+        ), body["issues"]
+
+    async def test_unknown_draft_reverify_is_404(self, api_client: AsyncClient) -> None:
+        response = await api_client.post(f"/api/drafts/{uuid.uuid4()}/reverify")
+        assert response.status_code == 404

@@ -28,6 +28,8 @@ from app.drafting.numeric_guard import mark_unsourced_amounts
 from app.drafting.section_quality import unusable_reason
 from app.llm import build_llm_provider
 from app.llm.base import LLMMessage, LLMProvider, LLMRequest, LLMRole
+from app.model_routing.cache import get_response_cache
+from app.model_routing.registry import TaskKind, resolve_route
 from app.verification.deterministic import check_amounts_by_purpose
 from app.verification.subject_of_proof import proof_gaps
 
@@ -923,7 +925,21 @@ async def generate_draft(
     промпта, а жёсткой грамматикой (см. app.drafting.operative).
     """
     cfg = settings or get_settings()
-    llm = provider or build_llm_provider(cfg)
+    # Кэш включается только на штатном пути (провайдер из настроек).
+    # Если провайдер передан явно, это инъекция: тесты и стенды ждут
+    # настоящих вызовов, а не ответа из чужого прогона.
+    cache = get_response_cache(cfg) if provider is None else None
+    if provider is None:
+        # Маршрут по умолчанию совпадает с OLLAMA_MODEL, поэтому пока
+        # модель одна, поведение не меняется. Переопределение приходит
+        # только переменной окружения — «на всякий случай» модель не
+        # подменяется, иначе качество нельзя было бы сравнить.
+        route = resolve_route(TaskKind.SECTION_DRAFT, cfg)
+        if route.source != "default" and route.model != cfg.ollama_model:
+            cfg = cfg.model_copy(update={"ollama_model": route.model})
+        llm = build_llm_provider(cfg)
+    else:
+        llm = provider
 
     sections_to_do = [
         s for s in template.get("sections", [])
@@ -996,7 +1012,18 @@ async def generate_draft(
             )
             started_section = time.perf_counter()
             try:
-                response = await llm.generate(request)
+                if cache is None:
+                    response = await llm.generate(request)
+                else:
+                    response = await cache.generate(
+                        llm,
+                        request,
+                        task=(
+                            TaskKind.SECTION_DRAFT
+                            if attempt == 0
+                            else TaskKind.SECTION_RETRY
+                        ),
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Раздел %s не сгенерирован: %s", section["key"], exc)
                 error = str(exc)[:200]

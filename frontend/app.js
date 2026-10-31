@@ -167,6 +167,14 @@ const CLAIM_STATUS_TEXT = {
   VERIFICATION_ERROR: "проверка не выполнена",
 };
 
+/* Статус документа по проверке (ТЗ §14) — не путать с кодом отчёта. */
+const DOCUMENT_STATUS_TEXT = {
+  VERIFIED_WITHIN_SCOPE: "проверено в этих пределах",
+  REVIEW_REQUIRED: "нужна проверка",
+  BLOCKED: "есть блокирующие замечания",
+  VERIFICATION_FAILED: "проверка не выполнена",
+};
+
 function label(map, key) {
   return map[key] || key;
 }
@@ -1060,6 +1068,16 @@ function renderVerification(verification) {
 
   $("verdict").textContent = text;
   show(box, true);
+
+  // Отчёт прошлой версии: текст изменился, проверка — нет. Показывать
+  // его как действующий нельзя: судья решит, что текущий текст проверен.
+  if (verification.is_stale) {
+    box.className = "verify stale";
+    $("verdict").textContent =
+      "Отчёт относится к прежней версии текста: после правки нужна " +
+      "повторная проверка. " +
+      text;
+  }
 }
 
 function renderSources(sources) {
@@ -1165,10 +1183,35 @@ async function saveEdit() {
   }
 }
 
+/*
+  Повторная проверка. Кнопка не подтверждает проект: она запускает
+  проверку, и статус появляется только из её результата.
+*/
+async function reverify() {
+  if (!state.draft) return;
+  const button = $("btn-reverify");
+  button.disabled = true;
+  try {
+    const report = await api(`/api/drafts/${state.draft.id}/reverify`, {
+      method: "POST",
+    });
+    showAlert(
+      `Проверка выполнена: ${label(DOCUMENT_STATUS_TEXT, report.document_status)}.`,
+      true
+    );
+    await loadDraft();
+  } catch (error) {
+    showAlert(`Не удалось проверить заново: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 /* ── Связка элементов ─────────────────────────────────────────── */
 
 $("btn-generate").onclick = generate;
 $("btn-save-edit").onclick = saveEdit;
+$("btn-reverify").onclick = reverify;
 $("btn-download").onclick = downloadDraft;
 
 /* Создание дела: простая форма из двух полей. */

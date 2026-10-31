@@ -77,6 +77,14 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 4096
     ollama_temperature: float = 0.1
 
+    # ── Маршрутизация и кэш ответов модели (Этап 7) ────────────────────
+    # По умолчанию один и тот же ответ на один и тот же запрос берётся из
+    # кэша: повторная генерация того же раздела не должна стоить минуты
+    # на CPU. Кэш можно выключить, не меняя код.
+    response_cache_enabled: bool = True
+    response_cache_ttl_seconds: int = 3600
+    response_cache_max_entries: int = 128
+
     # ── Embeddings (п.53) ──────────────────────────────────────────────
     embedding_dim: int = 1024
     embedding_model: str = "bge-m3"

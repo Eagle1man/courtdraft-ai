@@ -33,8 +33,10 @@ from app.models.entities import (
     DraftStatus,
     DraftVersion,
     EvidenceItem,
+    Verification,
 )
 from app.verification.engine import VerificationReport, verify_draft
+from app.verification.recheck import recheck_version
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +326,38 @@ class DraftService:
             author=author,
         )
         return version
+
+    async def reverify(
+        self, draft_id: uuid.UUID
+    ) -> tuple[Draft, DraftVersion, Verification, VerificationReport]:
+        """Проверить последнюю версию заново (Этап 8).
+
+        Правило: исправление не повышает статус само по себе. Статус
+        считается только из нового отчёта; старый отчёт остаётся
+        привязанным к своей версии и помечается устаревшим.
+        """
+        draft = await self.drafts.get(draft_id)
+        if draft is None:
+            raise LookupError("Проект не найден")
+
+        versions = await self.drafts.list_versions(draft_id)
+        if not versions:
+            raise ValueError("У проекта нет сохранённой версии")
+
+        version = versions[-1]
+        pack = await self.build_pack(draft.case_id)
+        report = recheck_version(version, pack)
+
+        record = await self.drafts.add_verification(
+            draft.id,
+            draft_version=version.version,
+            status=report.status.value,
+            issues=[issue.to_dict() for issue in report.issues],
+            claims_checked=report.claims_checked,
+            unsupported_claims=report.unsupported_claims,
+            sections_checked=report.sections_checked,
+        )
+        return draft, version, record, report
 
     async def set_status(
         self, draft_id: uuid.UUID, new_status: str, *, actor: str = "system"

@@ -1,0 +1,100 @@
+{
+  "date": "2026-10-31 12:59",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.14.3",
+  "checks": [
+    {
+      "name": "pytest",
+      "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe -m pytest -q",
+      "cwd": "D:\\courtdraft-ai\\backend",
+      "exit_code": 0,
+      "seconds": 92.1,
+      "output_tail": [
+        "........................................................................ [ 95%]",
+        "..............................................                           [100%]"
+      ],
+      "stderr_tail": []
+    },
+    {
+      "name": "ruff",
+      "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\ruff.exe check app tests",
+      "cwd": "D:\\courtdraft-ai\\backend",
+      "exit_code": 0,
+      "seconds": 0.1,
+      "output_tail": [
+        "All checks passed!"
+      ],
+      "stderr_tail": []
+    },
+    {
+      "name": "mypy",
+      "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\mypy.exe app",
+      "cwd": "D:\\courtdraft-ai\\backend",
+      "exit_code": 0,
+      "seconds": 1.6,
+      "output_tail": [
+        "pyproject.toml: note: unused section(s): module = ['langchain_core.*', 'langgraph.*']",
+        "Success: no issues found in 84 source files"
+      ],
+      "stderr_tail": []
+    },
+    {
+      "name": "benchmark_rules",
+      "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe ../scripts/verification_benchmark.py",
+      "cwd": "D:\\courtdraft-ai\\backend",
+      "exit_code": 0,
+      "seconds": 0.3,
+      "output_tail": [
+        "�������� � �������: 25",
+        "������� defect+clean: 45 (clean: 14)",
+        "��������� ������������: 31, �������: 31 (100%)",
+        "������ ������������ �� clean: 0",
+        "",
+        "=== ����� (���������) ===",
+        "�����: 4/4",
+        "",
+        "=== ����������� (���������) ===",
+        "�����: 5/5",
+        "",
+        "���������: D:\\courtdraft-ai\\docs\\verification-benchmark-baseline.json"
+      ],
+      "stderr_tail": []
+    },
+    {
+      "name": "benchmark_stage6",
+      "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe ../scripts/stage6_benchmark.py",
+      "cwd": "D:\\courtdraft-ai\\backend",
+      "exit_code": 0,
+      "seconds": 0.3,
+      "output_tail": [
+        "���: 20, ������������: 2",
+        "",
+        "=== ����������� �����ͨ���� ����� ===",
+        "�������: 17/17",
+        "",
+        "������:",
+        "  2-105/2025: FP purpose=['AMOUNT_WRONG_PURPOSE'] unsourced=[]",
+        "  2-107/2025: FP purpose=[] unsourced=['50 000']",
+        "",
+        "���������: docs/stage6-baseline.json"
+      ],
+      "stderr_tail": []
+    },
+    {
+      "name": "cache_stage7",
+      "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe scripts/stage7_routing_benchmark.py",
+      "cwd": "D:\\courtdraft-ai",
+      "exit_code": 0,
+      "seconds": 1.0,
+      "output_tail": [
+        "  \"cache_enabled_by_default\": true,",
+        "  \"ttl_seconds\": 3600,",
+        "  \"max_entries\": 128",
+        "}",
+        "Baseline: D:\\courtdraft-ai\\docs\\stage7-baseline.json",
+        "ПРОШЛО: попадание отдаёт тот же текст, провайдер не вызывается повторно, доля попаданий 50%"
+      ],
+      "stderr_tail": []
+    }
+  ]
+}

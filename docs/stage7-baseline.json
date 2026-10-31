@@ -1,0 +1,43 @@
+{
+  "stub_delay_ms": 20,
+  "unique_prompts": 4,
+  "provider_calls": 4,
+  "first_pass_ms": [
+    31,
+    31,
+    32,
+    32
+  ],
+  "second_pass_ms": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "cache": {
+    "entries": 4,
+    "hits": 4,
+    "misses": 4,
+    "hit_ratio_percent": 50,
+    "hit_avg_ms": 0,
+    "miss_avg_ms": 31
+  },
+  "identical_outputs": true,
+  "mismatched_prompts": [],
+  "note": "Задержка стенда 20 мс, не реальной модели: REAL-прогон на этой машине не выполнялся.",
+  "routes": [
+    {
+      "task": "section_draft",
+      "model": "qwen3.5:4b",
+      "source": "default"
+    },
+    {
+      "task": "section_retry",
+      "model": "qwen3.5:4b",
+      "source": "default"
+    }
+  ],
+  "cache_enabled_by_default": true,
+  "ttl_seconds": 3600,
+  "max_entries": 128
+}
