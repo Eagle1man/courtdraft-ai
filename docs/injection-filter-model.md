@@ -180,6 +180,11 @@ llama4). Прогон: `--model <каталог>`, 54 фрагмента за 16
    на этой машине не хватает памяти (≈1,6 ГБ весов при 1,5 ГБ свободных):
    проверять на ВМ.
 
+План и скрипты дообучения — `docs/injection-guard-finetune.md`:
+`scripts/build_injection_dataset.py` собирает сбалансированный набор без
+пересечения с контрольным, `scripts/finetune_injection_guard.py` обучает
+и `scripts/eval_injection_guard.py --model` принимает по precision/recall.
+
 **Решение:** локальные генеративные модели и Prompt Guard 2 (int8) как
 фильтр не включаются. Рабочий слой остаётся детерминированный (precision
 1,00, recall 0,44). Полные ответы — `docs/guard-eval-*.json`.

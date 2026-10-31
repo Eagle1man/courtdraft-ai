@@ -137,3 +137,8 @@ backend/.tessdata/
 
 # Кэш ответов модели (SQLite): локальный, в репозиторий не входит.
 backend/.cache/
+
+# Сгенерированный набор для дообучения и веса моделей: воспроизводятся
+# скриптом build_injection_dataset.py, в репозиторий не входят.
+data/injection_guard/
+models/

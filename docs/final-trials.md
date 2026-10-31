@@ -85,6 +85,11 @@ ui_reverify_check: до правки 13 замечаний; после прав�
   Набор для оценки готов: 54 фрагмента (36 обычных, 18 попыток) в
   `backend/tests/data/injection_guard_set.jsonl`, метрики и выбор порога —
   `scripts/eval_injection_guard.py` (precision не ниже 90%).
+- **План дообучения фильтра.** `docs/injection-guard-finetune.md`:
+  генератор сбалансированного набора (`build_injection_dataset.py`,
+  2000 строк, контрольный набор не используется), скрипт обучения
+  (`finetune_injection_guard.py`, mDeBERTa/ruBERT), приёмка по
+  precision ≥ 0,90 и recall ≥ 0,70 на 54 фрагментах.
 - **Постоянный кэш ответов.** `RESPONSE_CACHE_PATH` включает SQLite-кэш:
   ответы переживают перезапуск, срок и лимит соблюдаются.
 - **Проверка инфраструктуры.** `scripts/infra_check.py` показывает, что

@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-01 00:25",
+  "date": "2026-11-01 02:04",
   "platform": "Windows-11-10.0.26200-SP0",
   "python": "3.14.3",
   "checks": [
@@ -8,10 +8,10 @@
       "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe -m pytest -q",
       "cwd": "D:\\courtdraft-ai\\backend",
       "exit_code": 0,
-      "seconds": 69.1,
+      "seconds": 78.2,
       "output_tail": [
-        "........................................................................ [ 95%]",
-        "..................................................                       [100%]"
+        "........................................................................ [ 94%]",
+        "..........................................................               [100%]"
       ],
       "stderr_tail": []
     },
@@ -31,7 +31,7 @@
       "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\mypy.exe app",
       "cwd": "D:\\courtdraft-ai\\backend",
       "exit_code": 0,
-      "seconds": 4.5,
+      "seconds": 6.2,
       "output_tail": [
         "pyproject.toml: note: unused section(s): module = ['langchain_core.*', 'langgraph.*']",
         "Success: no issues found in 90 source files"
@@ -85,7 +85,7 @@
       "command": "D:\\courtdraft-ai\\backend\\.venv\\Scripts\\python.exe scripts/stage7_routing_benchmark.py",
       "cwd": "D:\\courtdraft-ai",
       "exit_code": 0,
-      "seconds": 1.4,
+      "seconds": 1.7,
       "output_tail": [
         "  \"cache_enabled_by_default\": true,",
         "  \"ttl_seconds\": 3600,",
