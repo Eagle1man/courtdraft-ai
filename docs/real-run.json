@@ -1,10 +1,10 @@
 {
-  "date": "2026-10-31 18:07",
+  "date": "2026-10-31 18:59",
   "case_number": "DEMO-001",
   "version": 3,
   "provider": "ollama",
   "model": "vikhr-7b:latest",
-  "elapsed_seconds": 332.0,
+  "elapsed_seconds": 351.3,
   "sections": [
     {
       "key": "introductory",
@@ -23,14 +23,12 @@
     {
       "key": "descriptive",
       "name": "Описательная часть",
-      "chars": 0,
-      "latency_ms": 7773,
+      "chars": 692,
+      "latency_ms": 0,
       "is_mock": false,
-      "needs_review": true,
+      "needs_review": false,
       "error": "",
-      "gaps": [
-        "Материалы дела не позволяют подготовить раздел."
-      ]
+      "gaps": []
     },
     {
       "key": "objections",
@@ -45,8 +43,8 @@
     {
       "key": "established",
       "name": "УСТАНОВИЛ",
-      "chars": 59,
-      "latency_ms": 162749,
+      "chars": 60,
+      "latency_ms": 189901,
       "is_mock": false,
       "needs_review": false,
       "error": "",
@@ -55,8 +53,8 @@
     {
       "key": "motivating",
       "name": "Мотивировочная часть",
-      "chars": 166,
-      "latency_ms": 160582,
+      "chars": 114,
+      "latency_ms": 160371,
       "is_mock": false,
       "needs_review": true,
       "error": "",
@@ -80,9 +78,9 @@
     "status": "REVIEW_REQUIRED",
     "issues": 9,
     "critical": 0,
-    "high": 1,
+    "high": 0,
     "claims_checked": 6,
-    "unsupported_claims": 1
+    "unsupported_claims": 0
   },
   "preflight": {
     "ready": true,
@@ -108,7 +106,7 @@
       {
         "name": "memory",
         "state": "WARN",
-        "detail": "модель 4.0 ГБ влезает в 7.8 ГБ, но сейчас свободно 0.3: нужно освободить около 4.4 ГБ",
+        "detail": "модель 4.0 ГБ влезает в 7.8 ГБ, но сейчас свободно 3.6: нужно освободить около 1.2 ГБ",
         "hint": "закройте тяжёлые программы (кто занял: python scripts\\memory_report.py); без этого прогон уйдёт в подкачку и будет идти очень долго"
       },
       {

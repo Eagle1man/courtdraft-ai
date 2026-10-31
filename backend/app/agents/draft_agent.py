@@ -41,7 +41,9 @@ NO_LAW_FOUND = "Норма права не найдена. Требуется п
 
 # Разделы, которые собираются по правилам, а не генерируются моделью.
 # Ключи совпадают с ключами шаблона data/templates/civil_judgment.json.
-RULES_BUILT_SECTIONS = frozenset({"operative", "objections", "introductory"})
+RULES_BUILT_SECTIONS = frozenset(
+    {"operative", "objections", "introductory", "descriptive"}
+)
 
 #: Якорное начало для разделов, которые модель проваливает чаще всего.
 #:
@@ -697,6 +699,85 @@ def _build_intro_section(section: dict[str, Any], pack: EvidencePack) -> Section
     )
 
 
+def _build_descriptive_section(
+    section: dict[str, Any], pack: EvidencePack
+) -> SectionDraft:
+    """Описательная часть по правилам, без участия модели.
+
+    Почему правилами: на этом промпте `vikhr-7b` возвращает немедленный
+    конец ответа — проверено на уровне API Ollama (`eval_count=1`,
+    `done_reason=stop`, пустой `content`), причём промпт влезает в
+    контекст. Модель 1,5B тот же раздел пишет, но короче и с потерями.
+
+    Содержание — только факты из пакета: кто, к кому, с чем обратился и
+    что указано в обоснование. Требования цитируются дословно с
+    указанием документа: пересказ требований истца моделью уже приводил
+    к подмене суммы в проекте. Оценок и выводов в разделе нет — это
+    работа суда.
+    """
+    plaintiff = _side_name(pack, "истец")
+    defendant = _side_name(pack, "ответчик")
+    subject = _dispute_subject(pack)
+
+    if plaintiff and defendant:
+        opening = f"Истец {plaintiff} обратился в суд с иском к {defendant}"
+    elif plaintiff:
+        opening = f"Истец {plaintiff} обратился в суд с иском"
+    elif defendant:
+        opening = f"В суд предъявлен иск к {defendant}"
+    else:
+        opening = "В суд предъявлен иск"
+
+    if subject and re.match(r"^о[\s.]", subject, re.IGNORECASE):
+        # Предмет спора годится в предложение «с иском …», только если это
+        # формулировка вида «о взыскании …». Иначе это первая фраза
+        # требования, и «с иском к X Взыскать задолженность» — не текст акта.
+        opening += f" {subject}"
+    lines: list[str] = [opening + "."]
+
+    claims = pack.by_category("claims")[:5]
+    citations: list[str] = []
+    if claims:
+        lines.append("")
+        lines.append("В обоснование иска указано:")
+        for index, item in enumerate(claims, start=1):
+            lines.append(
+                f"{index}. {_document_title(item.source_document)}: «{item.text}»"
+            )
+            if item.source_document and item.source_document not in citations:
+                citations.append(item.source_document)
+    else:
+        lines.append("")
+        lines.append(
+            f"Требования истца в материалах дела не выделены: {NEEDS_REVIEW}"
+        )
+
+    if pack.by_category("objections"):
+        lines.append("")
+        lines.append(
+            "Ответчик представил возражения на иск; их содержание приведено "
+            "в разделе «Доводы ответчика»."
+        )
+
+    if claims:
+        lines.append("")
+        lines.append(
+            "Изложено по материалам дела. Оценка доказательств в этом "
+            "разделе не приводится."
+        )
+
+    return SectionDraft(
+        key=section["key"],
+        name=section["name"],
+        text="\n".join(lines),
+        # Текст собран правилами из материалов, а не заглушкой модели.
+        is_mock=False,
+        citations=citations,
+        needs_review=not claims,
+        built_by="rules",
+    )
+
+
 #: Реквизиты и адрес: «119034, г. Москва, ул. Пречистенка, д. 12».
 _NOISE_RE = re.compile(
     r"(?:г\.|гор\.|ул\.|пр-т|просп\.|пер\.|д\.\s*\d|дом\s+\d|кв\.|корп\.|"
@@ -960,6 +1041,8 @@ async def generate_draft(
                 result.sections.append(_build_operative_section(section, pack))
             elif section["key"] == "objections":
                 result.sections.append(_build_objections_section(section, pack))
+            elif section["key"] == "descriptive":
+                result.sections.append(_build_descriptive_section(section, pack))
             else:
                 result.sections.append(_build_intro_section(section, pack))
             continue
