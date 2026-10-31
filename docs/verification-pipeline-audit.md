@@ -278,9 +278,10 @@ PostgreSQL предусмотрен.
 **Этап 10 — выполнен.** `scripts/final_trials.py` запускает pytest, ruff,
 mypy strict и три benchmark-скрипта, пишет `docs/final-trials.json`;
 отчёт с цифрами и ограничениями — `docs/final-trials.md`. Прогон
-2026-10-31: все проверки с кодом 0, 1054 теста. Ограничения записаны
+2026-10-31: все проверки с кодом 0, 1070 тестов. Ограничения записаны
 там же: REAL не запускался, `data/demo/real/` вне репозитория, кэш в
-памяти процесса, SQLite вместо PostgreSQL.
+памяти процесса, SQLite вместо PostgreSQL. Подготовка к REAL-прогону —
+`docs/real-run-monday.md`, `app/llm/preflight.py` и `scripts/real_run.py`.
 
 ## 14. Baseline: тесты
 
@@ -292,6 +293,8 @@ pytest -q   (backend, venv, 2026-10-31)
 (после Этапа 9 — 1037 passed, exit code 0)
 (после этапов 7–8 и 10 — 1054 собранных теста, exit code 0;
  `scripts/final_trials.py`, см. `docs/final-trials.md`)
+(после подготовки REAL — 1070 собранных тестов, exit code 0;
+ `app/llm/preflight.py`, `scripts/real_run.py`, см. `docs/real-run-monday.md`)
 ```
 
 Внешние сервисы для набора не требуются: модели и Ollama подменены

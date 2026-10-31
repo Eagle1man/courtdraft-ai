@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-31 14:42",
+  "preflight": {
+    "ready": false,
+    "checks": [
+      {
+        "name": "provider",
+        "state": "OK",
+        "detail": "LLM_PROVIDER=ollama, модель vikhr-7b:latest",
+        "hint": ""
+      },
+      {
+        "name": "ollama",
+        "state": "OK",
+        "detail": "сервер отвечает: http://127.0.0.1:11434",
+        "hint": ""
+      },
+      {
+        "name": "model",
+        "state": "OK",
+        "detail": "модель vikhr-7b:latest в реестре",
+        "hint": ""
+      },
+      {
+        "name": "memory",
+        "state": "FAIL",
+        "detail": "модель 4.0 ГБ не помещается: свободно VRAM нет видеокарты ГБ, RAM 1.4 ГБ",
+        "hint": "взять модель меньше (4b вместо 7b), освободить память или перенести прогон на машину с большей памятью"
+      },
+      {
+        "name": "embeddings",
+        "state": "WARN",
+        "detail": "EMBEDDING_PROVIDER=local, модель bge-m3",
+        "hint": "если модели нет, система работает в деградации — это допустимо, но поиск по смыслу будет отключён"
+      }
+    ]
+  }
+}

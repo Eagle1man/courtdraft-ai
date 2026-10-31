@@ -19,14 +19,14 @@ backend\.venv\Scripts\python.exe scripts\final_trials.py
 
 | Проверка | Команда | Время | Код | Факт |
 |---|---|---:|---:|---|
-| pytest | `python -m pytest -q` (backend) | 92.1 с | 0 | 1054 теста собрано, падений нет |
+| pytest | `python -m pytest -q` (backend) | 79.2 с | 0 | 1070 тестов собрано, падений нет |
 | ruff | `ruff check app tests` | 0.1 с | 0 | `All checks passed!` |
-| mypy strict | `mypy app` | 1.6 с | 0 | `Success: no issues found in 84 source files` |
+| mypy strict | `mypy app` | 1.3 с | 0 | `Success: no issues found in 85 source files` |
 | benchmark правил | `scripts/verification_benchmark.py` | 0.3 с | 0 | 31/31 ожидаемых срабатываний, 0 ложных на clean |
 | benchmark Этапа 6 | `scripts/stage6_benchmark.py` | 0.3 с | 0 | 20 пар, 17/17 инъекций, 2 ложных срабатывания |
 | кэш Этапа 7 | `scripts/stage7_routing_benchmark.py` | 1.0 с | 0 | попадание 50%, провайдер не вызван повторно, текст идентичен |
 
-Число тестов указано по `pytest --collect-only` (1054), потому что при
+Число тестов указано по `pytest --collect-only` (1070), потому что при
 перенаправлении вывода в файл pytest не печатает итоговую строку; код
 возврата в `docs/final-trials.json` — 0.
 
@@ -73,6 +73,8 @@ ui_reverify_check: до правки 13 замечаний; после прав�
 1. **REAL-прогон не выполнялся.** Все цифры выше — про детерминированные
    правила, MOCK-провайдер и механика кэша. Качество Vikhr на реальных
    материалах этими испытаниями не измерено; выводы о нём делать нельзя.
+   Подготовка к прогону на машине с RTX — `docs/real-run-monday.md`,
+   готовность проверяется `python -m app.llm.preflight`.
 2. **Этап 6 воспроизводится только при `data/demo/real/`.** Эти
    материалы вне репозитория (персональные данные и лицензия корпуса):
    на чистом клоне шаг упадёт, хотя здесь проходит.

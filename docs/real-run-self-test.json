@@ -1,0 +1,120 @@
+{
+  "date": "2026-10-31 14:44",
+  "case_number": "DEMO-001",
+  "version": 4,
+  "provider": "ollama",
+  "model": "vikhr-7b:latest",
+  "elapsed_seconds": 0.3,
+  "sections": [
+    {
+      "key": "introductory",
+      "name": "Вводная часть",
+      "chars": 293,
+      "latency_ms": 0,
+      "is_mock": false,
+      "needs_review": true,
+      "error": "",
+      "gaps": [
+        "Состав суда: данных нет в материалах дела",
+        "Секретарь судебного заседания: данных нет в материалах дела",
+        "Дата принятия решения: данных нет в материалах дела"
+      ]
+    },
+    {
+      "key": "descriptive",
+      "name": "Описательная часть",
+      "chars": 184,
+      "latency_ms": 3,
+      "is_mock": true,
+      "needs_review": true,
+      "error": "",
+      "gaps": []
+    },
+    {
+      "key": "objections",
+      "name": "Доводы ответчика",
+      "chars": 567,
+      "latency_ms": 0,
+      "is_mock": false,
+      "needs_review": false,
+      "error": "",
+      "gaps": []
+    },
+    {
+      "key": "established",
+      "name": "УСТАНОВИЛ",
+      "chars": 184,
+      "latency_ms": 9,
+      "is_mock": true,
+      "needs_review": true,
+      "error": "",
+      "gaps": []
+    },
+    {
+      "key": "motivating",
+      "name": "Мотивировочная часть",
+      "chars": 184,
+      "latency_ms": 12,
+      "is_mock": true,
+      "needs_review": true,
+      "error": "",
+      "gaps": [
+        "обстоятельство «наступление срока оплаты» не подтверждено ни одним документом дела",
+        "обстоятельство «проценты по ст. 395 ГК РФ (если неустойки нет)» не подтверждено ни одним документом дела"
+      ]
+    },
+    {
+      "key": "operative",
+      "name": "РЕШИЛ",
+      "chars": 640,
+      "latency_ms": 0,
+      "is_mock": false,
+      "needs_review": false,
+      "error": "",
+      "gaps": []
+    }
+  ],
+  "verification": {
+    "status": "REVIEW_REQUIRED",
+    "issues": 10,
+    "critical": 0,
+    "high": 0,
+    "claims_checked": 3,
+    "unsupported_claims": 0
+  },
+  "preflight": {
+    "ready": false,
+    "checks": [
+      {
+        "name": "provider",
+        "state": "OK",
+        "detail": "LLM_PROVIDER=ollama, модель vikhr-7b:latest",
+        "hint": ""
+      },
+      {
+        "name": "ollama",
+        "state": "OK",
+        "detail": "сервер отвечает: http://127.0.0.1:11434",
+        "hint": ""
+      },
+      {
+        "name": "model",
+        "state": "OK",
+        "detail": "модель vikhr-7b:latest в реестре",
+        "hint": ""
+      },
+      {
+        "name": "memory",
+        "state": "FAIL",
+        "detail": "модель 4.0 ГБ, с запасом нужно 4.7: свободно VRAM нет (видеокарта не найдена), RAM 1.2 ГБ",
+        "hint": "взять модель меньше (4b вместо 7b), освободить память или перенести прогон на машину с большей памятью"
+      },
+      {
+        "name": "embeddings",
+        "state": "WARN",
+        "detail": "EMBEDDING_PROVIDER=local, модель bge-m3",
+        "hint": "если модели нет, система работает в деградации — это допустимо, но поиск по смыслу будет отключён"
+      }
+    ]
+  }
+}
