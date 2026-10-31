@@ -155,3 +155,19 @@ class TestPipelineWiring:
         result = await self._ingest(sess, case, Settings())
         await sess.commit()
         assert not any("фильтр" in warning.lower() for warning in result.warnings)
+
+
+class TestOnnxModel:
+    """ONNX-копия модели: определяется по файлу, без torch."""
+
+    def test_catalog_without_onnx_is_not_onnx(self, tmp_path: Path) -> None:
+        assert injection_guard._onnx_file(str(tmp_path)) is None
+
+    def test_onnx_file_is_found(self, tmp_path: Path) -> None:
+        (tmp_path / "model.quant.onnx").write_bytes(b"stub")
+        found = injection_guard._onnx_file(str(tmp_path))
+        assert found is not None
+        assert found.name == "model.quant.onnx"
+
+    def test_model_id_is_not_a_directory(self) -> None:
+        assert injection_guard._onnx_file("meta-llama/Llama-Prompt-Guard-2-86M") is None

@@ -19,7 +19,10 @@ torch) и отдельная модель, её наличие — решени�
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 DEFAULT_MODEL = "meta-llama/Llama-Prompt-Guard-2-86M"
 #: 512 токенов промпта — примерно 1500 символов русского текста.
@@ -44,9 +47,19 @@ class GuardVerdict:
 
 def availability(model: str = DEFAULT_MODEL) -> tuple[bool, str]:
     """(можно ли использовать фильтр, причина отказа)."""
+    if _onnx_file(model) is not None:
+        try:
+            import onnxruntime  # type: ignore[import-untyped]  # noqa: F401
+            import transformers  # noqa: F401
+        except ImportError:
+            return False, (
+                "нет onnxruntime/transformers: установите их "
+                "(см. docs/injection-filter-model.md)"
+            )
+        return True, ""
     try:
-        import torch  # type: ignore[import-not-found]  # noqa: F401
-        import transformers  # type: ignore[import-not-found]  # noqa: F401
+        import torch  # noqa: F401
+        import transformers  # noqa: F401
     except ImportError:
         return False, (
             "нет transformers/torch: установите их и скачайте модель "
@@ -67,6 +80,76 @@ def _split(text: str) -> list[str]:
             break
         start = end - CHUNK_OVERLAP
     return chunks
+
+
+def _onnx_file(model: str) -> Path | None:
+    """ONNX-файл в локальном каталоге модели, если он есть."""
+    base = Path(model)
+    if not base.is_dir():
+        return None
+    for name in ("model.quant.onnx", "model.onnx"):
+        candidate = base / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+#: Загруженные ONNX-сессии: путь модели -> (сессия, токенизатор, индекс, входы).
+_onnx_loaded: dict[str, tuple[Any, Any, int, list[str]]] = {}
+
+
+def _load_onnx(model: str) -> tuple[Any, Any, int, list[str]]:
+    if model in _onnx_loaded:
+        return _onnx_loaded[model]
+
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
+
+    onnx_path = _onnx_file(model)
+    if onnx_path is None:  # pragma: no cover - проверено выше
+        raise GuardUnavailableError("в каталоге модели нет ONNX-файла")
+
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    session = ort.InferenceSession(
+        str(onnx_path), providers=["CPUExecutionProvider"]
+    )
+    config = json.loads((Path(model) / "config.json").read_text(encoding="utf-8"))
+    id2label = {
+        int(index): str(label).upper()
+        for index, label in config.get("id2label", {}).items()
+    }
+    malicious_index = next(
+        (index for index, label in id2label.items() if "MALICIOUS" in label),
+        max(id2label) if id2label else 1,
+    )
+    names = [item.name for item in session.get_inputs()]
+    loaded = (session, tokenizer, malicious_index, names)
+    _onnx_loaded[model] = loaded
+    return loaded
+
+
+def _classify_onnx(chunks: list[str], model: str) -> list[float]:
+    """ONNX-путь: не требует torch, памяти нужно меньше."""
+    import numpy as np
+
+    session, tokenizer, malicious_index, input_names = _load_onnx(model)
+    scores: list[float] = []
+    for chunk in chunks:
+        encoded = tokenizer(chunk, truncation=True, max_length=512)
+        ids = list(encoded["input_ids"])
+        feed = {}
+        for name in input_names:
+            if name == "input_ids":
+                feed[name] = np.array([ids], dtype=np.int64)
+            elif name == "attention_mask":
+                feed[name] = np.ones((1, len(ids)), dtype=np.int64)
+            elif name == "token_type_ids":
+                feed[name] = np.zeros((1, len(ids)), dtype=np.int64)
+        logits = np.asarray(session.run(None, feed)[0][0])
+        shifted = np.exp(logits - logits.max())
+        probabilities = shifted / shifted.sum()
+        scores.append(float(probabilities[malicious_index]))
+    return scores
 
 
 #: Загруженные модели: ключ — имя, значение — (токенизатор, модель, индекс
@@ -102,6 +185,9 @@ def _load(model: str) -> tuple[object, object, int]:
 
 def classify_chunks(chunks: list[str], model: str) -> list[float]:
     """Вероятности «malicious» по окнам. Синхронно: вызывать в потоке."""
+    if _onnx_file(model) is not None:
+        return _classify_onnx(chunks, model)
+
     import torch
 
     tokenizer, classifier, malicious_index = _load(model)

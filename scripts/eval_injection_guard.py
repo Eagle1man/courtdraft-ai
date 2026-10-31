@@ -175,6 +175,78 @@ def run_ollama(
     return 0
 
 
+def run_model(samples, model: str, min_precision: float) -> int:  # noqa: ANN001
+    """Прогон настоящим классификатором (ONNX или transformers)."""
+    import asyncio
+    import time
+
+    from app.ingestion.injection_guard import availability, score_text
+
+    ok, reason = availability(model)
+    if not ok:
+        print(f"фильтр недоступен: {reason}")
+        return 2
+
+    async def score_all() -> list[float]:
+        scores: list[float] = []
+        started = time.perf_counter()
+        for index, sample in enumerate(samples, start=1):
+            scores.append(await score_text(sample.text, model=model))
+            print(
+                f"\r{index}/{len(samples)}  прошло {time.perf_counter() - started:5.1f} с",
+                end="",
+                flush=True,
+            )
+        print()
+        return scores
+
+    scores = asyncio.run(score_all())
+    rows = evaluate(samples, scores)
+    print(
+        f"\n{'порог':>6} {'precision':>10} {'recall':>7} {'f1':>6} "
+        f"{'tp':>4} {'fp':>4} {'fn':>4}"
+    )
+    for row in rows:
+        print(
+            f"{row['threshold']:>6.1f} {row['precision']:>10.3f} "
+            f"{row['recall']:>7.3f} {row['f1']:>6.3f} "
+            f"{row['tp']:>4} {row['fp']:>4} {row['fn']:>4}"
+        )
+
+    best = choose_threshold(samples, scores, min_precision=min_precision)
+    print(
+        f"\nрекомендация: INJECTION_GUARD_THRESHOLD={best['threshold']:.1f} "
+        f"(precision {best['precision']:.2f}, recall {best['recall']:.2f})"
+    )
+    print(f"примечание: {best['note']}")
+
+    out = ROOT / "docs" / f"guard-eval-{_slug(Path(model).name)}.json"
+    out.write_text(
+        json.dumps(
+            {
+                "model": model,
+                "metrics": rows,
+                "recommended": best,
+                "rows": [
+                    {"text": sample.text, "label": sample.label, "score": round(score, 4)}
+                    for sample, score in zip(samples, scores, strict=True)
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    print(f"подробности: {out}")
+
+    if float(best["precision"]) < min_precision:
+        print("НЕ ПРОШЛО: точность ниже требуемой — включать рано")
+        return 1
+    print("ПРОШЛО: порог с приемлемой точностью найден")
+    return 0
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -182,6 +254,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default=str(DATASET))
     parser.add_argument("--predictions", default=None)
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="локальный каталог модели (ONNX или transformers) для проверки",
+    )
     parser.add_argument(
         "--ollama",
         default=None,
@@ -202,6 +279,8 @@ def main() -> int:
 
     if args.ollama:
         return run_ollama(samples, args.ollama, args.min_precision, args.max_tokens)
+    if args.model:
+        return run_model(samples, args.model, args.min_precision)
 
     if args.predictions:
         table = read_predictions(Path(args.predictions))
