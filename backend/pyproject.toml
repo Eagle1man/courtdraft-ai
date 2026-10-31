@@ -35,6 +35,12 @@ dependencies = [
     "pypdf>=5.1",
     "python-docx>=1.1",
     "beautifulsoup4>=4.12",
+    # OCR сканированных PDF: растеризация страниц + распознавание
+    # локально, без обращения к облаку (п.44). Tesseract — внешняя
+    # программа, ставится отдельно; см. docs/manual-testing.md.
+    "pymupdf>=1.24",
+    "pillow>=10.0",
+    "pytesseract>=0.3.13",
     # прочее
     "python-dateutil>=2.9",
 ]

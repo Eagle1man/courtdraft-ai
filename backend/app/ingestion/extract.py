@@ -179,6 +179,8 @@ def extract_text(
 
     if resolved == "application/pdf":
         result = _extract_pdf(data, limit)
+        if len(result.text.strip()) < cfg.ocr_min_chars:
+            result = _apply_ocr(filename, data, result, cfg, limit)
     elif resolved.startswith("application/vnd.openxmlformats"):
         result = _extract_docx(data, limit)
     elif resolved in ("text/html", "application/xhtml+xml"):
@@ -258,7 +260,87 @@ def _extract_pdf(data: bytes, limit: int) -> ExtractedDocument:
         text=text,
         pages=pages,
         page_count=len(pages),
-        metadata={"encrypted": getattr(reader, "is_encrypted", False)},
+        metadata={
+            "encrypted": getattr(reader, "is_encrypted", False),
+            "text_source": "native",
+        },
+        page_offsets=offsets,
+    )
+
+
+def _apply_ocr(
+    filename: str,
+    data: bytes,
+    native: ExtractedDocument,
+    config: Settings,
+    limit: int,
+) -> ExtractedDocument:
+    """Достать текст скана, если текстового слоя нет.
+
+    Правило: молча вернуть пустой документ нельзя — он выглядит как
+    успешно загруженный. Поэтому либо текст появляется, либо ошибка
+    называет причину: OCR выключен, Tesseract не установлен, языка нет.
+    """
+    if not config.ocr_enabled:
+        if not native.text.strip():
+            raise ExtractionError(
+                f"{filename}: PDF без текстового слоя (скан), а OCR отключён. "
+                "Включите OCR_ENABLED=true или загрузите документ с текстом."
+            )
+        return native
+
+    from app.ingestion.ocr import OcrUnavailableError, ocr_pdf
+
+    try:
+        ocr = ocr_pdf(
+            data,
+            languages=config.ocr_languages,
+            dpi=config.ocr_dpi,
+            max_pages=config.ocr_max_pages,
+            tessdata_dir=config.ocr_tessdata_dir,
+        )
+    except OcrUnavailableError as exc:
+        if not native.text.strip():
+            raise ExtractionError(
+                f"{filename}: PDF без текстового слоя (скан). "
+                f"Распознать не удалось: {exc}"
+            ) from exc
+        # Текстовый слой есть, но бедный: оставляем его, а причину
+        # отклонённого OCR показываем в метаданных.
+        native.metadata["ocr"] = {"used": False, "reason": str(exc)}
+        return native
+
+    pages = [Page(number=page.number, text=clean_text(page.text)) for page in ocr.pages]
+    text = "\n\n".join(p.text for p in pages)[:limit]
+    if not text.strip():
+        raise ExtractionError(
+            f"{filename}: скан распознан, но текста не получилось "
+            "(пустые страницы или нечитаемый скан)."
+        )
+
+    offsets: list[int] = []
+    total = 0
+    for page in pages:
+        if offsets:
+            total += 2
+        offsets.append(total)
+        total += len(page.text)
+
+    return ExtractedDocument(
+        text=text,
+        pages=pages,
+        page_count=len(pages),
+        metadata={
+            **native.metadata,
+            "text_source": "ocr",
+            "ocr": {
+                "used": True,
+                "engine": ocr.engine,
+                "languages": config.ocr_languages,
+                "dpi": config.ocr_dpi,
+                "warnings": ocr.warnings,
+            },
+        },
         page_offsets=offsets,
     )
 

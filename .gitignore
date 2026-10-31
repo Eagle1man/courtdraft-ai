@@ -130,3 +130,7 @@ data/corpus_index/
 data/corpus_index_full/
 data/index_smoke/
 data/index_smoke2/
+
+# Языковые модели Tesseract (rus/eng/osd, ~18 МБ): ставятся локально,
+# в репозиторий не входят. Каталог указывается через OCR_TESSDATA_DIR.
+backend/.tessdata/

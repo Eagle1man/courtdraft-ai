@@ -135,9 +135,11 @@ class TestExtractPdf:
         buffer = io.BytesIO()
         writer.write(buffer)
 
-        # Файл без текстового слоя: обязана быть внятная ошибка,
-        # а не «пустой документ».
-        with pytest.raises(ExtractionError, match="сканированн|изображен"):
+        # Файл без текстового слоя: обязана быть внятная ошибка, а не
+        # «пустой документ». С OCR сканированная страница идёт в
+        # распознавание, и пустая (белая) страница честно сообщает, что
+        # текста не получилось, а не молчит.
+        with pytest.raises(ExtractionError, match="скан|распозна"):
             extract_text("scan.pdf", buffer.getvalue())
 
     def test_corrupt_pdf_raises(self) -> None:

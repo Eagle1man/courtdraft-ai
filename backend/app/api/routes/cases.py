@@ -113,6 +113,7 @@ def _to_document_out(document: CaseDocument) -> DocumentOut:
         is_known_type=DocumentType.is_known(document.document_type),
         characters=len(document.text),
         has_placeholders=bool(_PLACEHOLDER.search(document.text)),
+        text_source=document.text_source,
         created_at=document.created_at,
     )
 

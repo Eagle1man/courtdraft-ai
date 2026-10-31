@@ -419,6 +419,14 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   color: var(--ink2);
 }
 
+/* Текст получен распознаванием скана: ошибки OCR возможны, и это видно
+ * до того, как цитата из документа попадёт в проект. */
+.kind.ocr {
+  background: var(--bronze-bg);
+  border-color: var(--bronze-line);
+  color: var(--bronze);
+}
+
 /* Метка «в файле скрыты личные данные» — показать, не читая файл. */
 .warnline {
   display: flex;

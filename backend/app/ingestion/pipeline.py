@@ -119,6 +119,18 @@ async def ingest_document(
         )
         raise IngestionError(str(exc)) from exc
 
+    ocr_info = extracted.metadata.get("ocr")
+    if isinstance(ocr_info, dict) and ocr_info.get("used"):
+        # Текст получен распознаванием: цитаты из него могут содержать
+        # ошибки OCR, и пользователь должен узнать это при загрузке, а не
+        # после того, как они попадут в проект.
+        warnings.append(
+            f"{filename}: текст распознан OCR ({ocr_info.get('engine')}, "
+            f"{ocr_info.get('languages')}) — возможны ошибки распознавания."
+        )
+        for ocr_warning in list(ocr_info.get("warnings") or [])[:3]:
+            warnings.append(f"{filename}: {ocr_warning}")
+
     # ── 4. Классификация ─────────────────────────────────────────────
     resolved_type = document_type or guess_document_type(filename, extracted.text)
 

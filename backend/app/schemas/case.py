@@ -66,6 +66,9 @@ class DocumentOut(BaseModel):
     # показывает и то и другое в списке, не выгружая весь текст документа.
     characters: int = 0
     has_placeholders: bool = False
+    #: native — текстовый слой файла, ocr — распознано с изображения.
+    #: Текст OCR может содержать ошибки распознавания, и это видно сразу.
+    text_source: str = "native"
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

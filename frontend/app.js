@@ -488,6 +488,9 @@ async function loadDocuments() {
     const type = label(DOC_TYPE_TEXT, doc.document_type);
     const meta =
       `<span class="kind">${escapeHtml(type)}</span>` +
+      (doc.text_source === "ocr"
+        ? '<span class="kind ocr" title="Текст получен распознаванием скана: возможны ошибки OCR">распознано OCR</span>'
+        : "") +
       `<span>${escapeHtml(chars(doc.characters))}</span>`;
 
     li.innerHTML =
@@ -602,7 +605,11 @@ async function openDoc(docId) {
     const hidden = detail.placeholders.length
       ? ` · скрыто значений: ${detail.placeholders.length}`
       : "";
-    $("doc-viewer-meta").textContent = `${type} · ${chars(detail.characters)}${hidden}`;
+    $("doc-viewer-meta").textContent =
+      `${type} · ${chars(detail.characters)}${hidden}` +
+      (detail.text_source === "ocr"
+        ? " · текст распознан OCR, возможны ошибки"
+        : "");
     $("doc-viewer-body").innerHTML = detail.text
       ? highlightPlaceholders(detail.text)
       : '<span class="muted">В документе нет текста.</span>';

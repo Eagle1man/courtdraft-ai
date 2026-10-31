@@ -261,6 +261,18 @@ class CaseDocument(TimestampMixin, Base):
 
     __table_args__ = (Index("ix_documents_case_type", "case_id", "document_type"),)
 
+    @property
+    def text_source(self) -> str:
+        """Откуда текст: `native` (слой PDF) или `ocr` (распознан).
+
+        Интерфейс показывает это в списке материалов: текст, полученный
+        распознаванием, может содержать ошибки, и судья должен это знать
+        до того, как увидит цитату из него.
+        """
+        if isinstance(self.metadata_json, dict):
+            return str(self.metadata_json.get("text_source", "native"))
+        return "native"
+
     def __repr__(self) -> str:
         return f"<CaseDocument {self.filename} type={self.document_type}>"
 
