@@ -176,3 +176,75 @@ class TestCacheSettings:
         second = get_response_cache(settings)
         assert first is not None
         assert first is second
+
+
+class TestPersistentCache:
+    """Кэш на диске: ответ переживает перезапуск, срок и лимит соблюдаются."""
+
+    @staticmethod
+    def _response(text: str) -> LLMResponse:
+        return LLMResponse(
+            text=text, model="m", provider="p", is_mock=True, latency_ms=1000
+        )
+
+    def test_entry_survives_restart(self, tmp_path) -> None:  # noqa: ANN001
+        path = tmp_path / "cache.sqlite3"
+        first = ResponseCache(path=path)
+        first.put("key-1", self._response("ответ модели"))
+        first.close()
+
+        second = ResponseCache(path=path)
+        cached = second.get("key-1")
+        second.close()
+
+        assert cached is not None
+        assert cached.text == "ответ модели"
+
+    def test_expired_entry_is_not_returned_after_restart(self, tmp_path) -> None:  # noqa: ANN001
+        clock = {"now": 1000.0}
+        path = tmp_path / "cache.sqlite3"
+        first = ResponseCache(path=path, ttl_seconds=10, clock=lambda: clock["now"])
+        first.put("key-1", self._response("старый ответ"))
+        first.close()
+
+        clock["now"] = 2000.0
+        second = ResponseCache(path=path, ttl_seconds=10, clock=lambda: clock["now"])
+        cached = second.get("key-1")
+        second.close()
+
+        assert cached is None
+
+    def test_old_entries_are_pruned_to_limit(self, tmp_path) -> None:  # noqa: ANN001
+        clock = {"now": 1000.0}
+        path = tmp_path / "cache.sqlite3"
+        cache = ResponseCache(
+            path=path, max_entries=1, clock=lambda: clock["now"]
+        )
+        cache.put("old", self._response("первый"))
+        clock["now"] = 1001.0
+        cache.put("new", self._response("второй"))
+        cache.close()
+
+        reopened = ResponseCache(path=path, max_entries=1, clock=lambda: clock["now"])
+        assert reopened.stats()["entries"] == 1
+        assert reopened.get("new") is not None
+        assert reopened.get("old") is None
+        reopened.close()
+
+    def test_corrupted_entry_is_dropped(self, tmp_path) -> None:  # noqa: ANN001
+        import sqlite3
+
+        path = tmp_path / "cache.sqlite3"
+        cache = ResponseCache(path=path)
+        cache.put("key-1", self._response("ответ"))
+        cache.close()
+
+        conn = sqlite3.connect(str(path))
+        conn.execute("UPDATE responses SET payload = ? WHERE key = ?", ("{oops", "key-1"))
+        conn.commit()
+        conn.close()
+
+        reopened = ResponseCache(path=path)
+        assert reopened.get("key-1") is None
+        assert reopened.stats()["entries"] == 0
+        reopened.close()

@@ -134,3 +134,6 @@ data/index_smoke2/
 # Языковые модели Tesseract (rus/eng/osd, ~18 МБ): ставятся локально,
 # в репозиторий не входят. Каталог указывается через OCR_TESSDATA_DIR.
 backend/.tessdata/
+
+# Кэш ответов модели (SQLite): локальный, в репозиторий не входит.
+backend/.cache/

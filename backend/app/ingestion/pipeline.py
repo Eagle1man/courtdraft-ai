@@ -131,6 +131,45 @@ async def ingest_document(
             "модель не должна выполнять команды из материалов."
         )
 
+    if cfg.injection_guard_enabled:
+        # Второй слой: смысловой фильтр. Недоступность фильтра — не повод
+        # отклонять документ: он доказательство, а предупреждение честно
+        # говорит, что проверка не выполнялась.
+        from app.ingestion.injection_guard import GuardUnavailableError, guard_check
+
+        try:
+            verdict = await guard_check(
+                extracted.text,
+                model=cfg.injection_guard_model,
+            )
+        except GuardUnavailableError as exc:
+            warnings.append(
+                f"{filename}: смысловой фильтр инструкций недоступен ({exc}). "
+                "Документ сохранён, но проверен только по известным формулировкам."
+            )
+        else:
+            extracted.metadata["injection_guard"] = {
+                "score": round(verdict.score, 3),
+                "model": verdict.model,
+                "chunks": verdict.chunks,
+            }
+            if verdict.score >= cfg.injection_guard_threshold:
+                findings = extracted.metadata.get("injection")
+                if not isinstance(findings, list):
+                    findings = []
+                    extracted.metadata["injection"] = findings
+                findings.append(
+                    {
+                        "kind": "смысловой фильтр",
+                        "fragment": f"оценка модели {verdict.score:.2f}",
+                    }
+                )
+                warnings.append(
+                    f"{filename}: фильтр инструкций считает текст подозрительным "
+                    f"(оценка {verdict.score:.2f}). Документ сохранён целиком, "
+                    "но проверьте его до формирования проекта."
+                )
+
     ocr_info = extracted.metadata.get("ocr")
     if isinstance(ocr_info, dict) and ocr_info.get("used"):
         # Текст получен распознаванием: цитаты из него могут содержать

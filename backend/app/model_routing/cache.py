@@ -1,4 +1,4 @@
-"""Кэш ответов модели (Этап 7).
+"""Кэш ответов модели (Этап 7): в памяти и, по настройке, на диске.
 
 Зачем: на CPU один раздел генерируется десятки секунд, а повторный прогон
 тех же материалов — обычное дело (перегенерация, демо, проверки). Кэш
@@ -10,18 +10,22 @@
 по контракту она на ответ не влияет — если бы входила, кэш промахивался
 бы на каждом узле графа.
 
-Кэш в памяти процесса. Отдельное хранилище (Redis/файлы) здесь не
-заводится: система локальная, процесс один, а лишняя зависимость на
-ноутбуке 8 ГБ дороже, чем польза от переживания перезапуска.
+Почему SQLite, а не Redis: система локальная и однопроцессная, а SQLite
+уже есть в проекте. Отдельный сервер кэша на ноутбуке 8 ГБ дороже, чем
+польза от сохранения нескольких ответов. Файл кэша переживает перезапуск:
+именно это и нужно, потому что модель загружается и считает минуты.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.config import Settings
 from app.llm.base import LLMProvider, LLMRequest, LLMResponse
@@ -35,14 +39,19 @@ class _Entry:
 
 
 class ResponseCache:
-    """LRU-кэш ответов модели с TTL и счётчиками замера."""
+    """LRU-кэш ответов модели с TTL, счётчиками и необязательным диском.
+
+    С `path` записи живут в SQLite и переживают перезапуск; без него —
+    только в памяти процесса (так ведут себя тесты и стенды).
+    """
 
     def __init__(
         self,
         *,
         ttl_seconds: int = 3600,
         max_entries: int = 128,
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] = time.time,
+        path: Path | None = None,
     ) -> None:
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds должен быть больше нуля")
@@ -53,10 +62,36 @@ class ResponseCache:
         self._clock = clock
         # dict сохраняет порядок вставки: первая запись — самая старая.
         self._entries: dict[str, _Entry] = {}
+        self._db: sqlite3.Connection | None = None
+        if path is not None:
+            self._open(path)
         self._hits = 0
         self._misses = 0
         self._hit_ms_total = 0
         self._miss_ms_total = 0
+
+    # ── Хранилище ─────────────────────────────────────────────────────
+
+    def _open(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # check_same_thread=False: один процесс, но корутины могут
+        # выполняться в разных потоках event loop.
+        self._db = sqlite3.connect(str(path), check_same_thread=False)
+        self._db.execute(
+            "CREATE TABLE IF NOT EXISTS responses ("
+            "key TEXT PRIMARY KEY, payload TEXT NOT NULL, stored_at REAL NOT NULL)"
+        )
+        self._db.commit()
+
+    def close(self) -> None:
+        if self._db is not None:
+            self._db.close()
+            self._db = None
+
+    def __del__(self) -> None:  # pragma: no cover - защита от утечки файла
+        # В деструкторе молчим: исключение здесь некому обработать.
+        with suppress(Exception):
+            self.close()
 
     @staticmethod
     def make_key(
@@ -85,6 +120,9 @@ class ResponseCache:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def get(self, key: str) -> LLMResponse | None:
+        if self._db is not None:
+            return self._get_from_db(key)
+
         entry = self._entries.get(key)
         if entry is None:
             return None
@@ -96,12 +134,57 @@ class ResponseCache:
         self._entries[key] = entry
         return entry.response
 
+    def _get_from_db(self, key: str) -> LLMResponse | None:
+        assert self._db is not None
+        row = self._db.execute(
+            "SELECT payload, stored_at FROM responses WHERE key = ?", (key,)
+        ).fetchone()
+        if row is None:
+            return None
+        payload, stored_at = row
+        if self._clock() - float(stored_at) > self._ttl:
+            self._db.execute("DELETE FROM responses WHERE key = ?", (key,))
+            self._db.commit()
+            return None
+        try:
+            return LLMResponse.model_validate_json(str(payload))
+        except ValueError:
+            # Испорченная запись (обрезанный файл, смена формата) — не
+            # повод падать: удаляем и считаем промахом.
+            self._db.execute("DELETE FROM responses WHERE key = ?", (key,))
+            self._db.commit()
+            return None
+
     def put(self, key: str, response: LLMResponse) -> None:
+        if self._db is not None:
+            self._put_to_db(key, response)
+            return
         self._entries.pop(key, None)
         self._entries[key] = _Entry(response=response, stored_at=self._clock())
         while len(self._entries) > self._max:
             oldest = next(iter(self._entries))
             del self._entries[oldest]
+
+    def _put_to_db(self, key: str, response: LLMResponse) -> None:
+        assert self._db is not None
+        now = self._clock()
+        self._db.execute(
+            "INSERT OR REPLACE INTO responses (key, payload, stored_at) "
+            "VALUES (?, ?, ?)",
+            (key, response.model_dump_json(), now),
+        )
+        # Истёкшие записи не храним: иначе файл растёт без пользы.
+        self._db.execute(
+            "DELETE FROM responses WHERE stored_at < ?", (now - self._ttl,)
+        )
+        excess = self._entries_count() - self._max
+        if excess > 0:
+            self._db.execute(
+                "DELETE FROM responses WHERE key IN ("
+                "SELECT key FROM responses ORDER BY stored_at ASC LIMIT ?)",
+                (excess,),
+            )
+        self._db.commit()
 
     async def generate(
         self,
@@ -136,10 +219,17 @@ class ResponseCache:
         self.put(key, response.model_copy(deep=True))
         return response
 
+    def _entries_count(self) -> int:
+        if self._db is not None:
+            assert self._db is not None
+            row = self._db.execute("SELECT COUNT(*) FROM responses").fetchone()
+            return int(row[0]) if row else 0
+        return len(self._entries)
+
     def stats(self) -> dict[str, int]:
         total = self._hits + self._misses
         return {
-            "entries": len(self._entries),
+            "entries": self._entries_count(),
             "hits": self._hits,
             "misses": self._misses,
             "hit_ratio_percent": int(self._hits * 100 / total) if total else 0,
@@ -148,24 +238,34 @@ class ResponseCache:
         }
 
     def clear(self) -> None:
+        if self._db is not None:
+            assert self._db is not None
+            self._db.execute("DELETE FROM responses")
+            self._db.commit()
         self._entries.clear()
         self._hits = self._misses = 0
         self._hit_ms_total = self._miss_ms_total = 0
 
 
-_singletons: dict[tuple[int, int], ResponseCache] = {}
+_singletons: dict[tuple[int, int, str], ResponseCache] = {}
 
 
 def get_response_cache(settings: Settings) -> ResponseCache | None:
-    """Кэш на процесс или None, если он выключен настройкой."""
+    """Кэш на процесс (при заданном пути — общий файл) или None."""
     if not settings.response_cache_enabled:
         return None
-    shape = (settings.response_cache_ttl_seconds, settings.response_cache_max_entries)
+    path = Path(settings.response_cache_path) if settings.response_cache_path else None
+    shape = (
+        settings.response_cache_ttl_seconds,
+        settings.response_cache_max_entries,
+        path.as_posix() if path else "",
+    )
     cache = _singletons.get(shape)
     if cache is None:
         cache = ResponseCache(
             ttl_seconds=shape[0],
             max_entries=shape[1],
+            path=path,
         )
         _singletons[shape] = cache
     return cache
@@ -173,4 +273,6 @@ def get_response_cache(settings: Settings) -> ResponseCache | None:
 
 def reset_response_cache() -> None:
     """Сбросить кэши (тесты и замер: иначе счётчики переходят между прогонами)."""
+    for cache in _singletons.values():
+        cache.close()
     _singletons.clear()

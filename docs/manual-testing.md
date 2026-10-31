@@ -27,6 +27,17 @@ backend\.venv\Scripts\python.exe scripts\memory_report.py        # что вле
 backend\.venv\Scripts\python.exe -m app.llm.preflight --probe    # готов ли REAL
 ```
 
+**Важно: `.env` два.** Если существует `backend\.env`, он перекрывает
+корневой `.env` (так устроен `Settings`). Проверить, что реально
+применяется:
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\infra_check.py
+```
+
+Первая строка вывода показывает режим LLM. Если там `ollama`, а вы
+меняли корневой файл, — правку надо повторить в `backend\.env`.
+
 `WARN memory` — не запрет: запустится, но медленно. `FAIL` — модель
 больше памяти машины, нужна другая модель или машина.
 

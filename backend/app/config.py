@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     response_cache_enabled: bool = True
     response_cache_ttl_seconds: int = 3600
     response_cache_max_entries: int = 128
+    # Пусто — кэш только в памяти процесса. Путь к файлу SQLite —
+    # кэш переживает перезапуск: модель на CPU считается минутами,
+    # и терять эти ответы при каждом старте незачем.
+    response_cache_path: str = ""
+    # ── Смысловой фильтр инструкций (необязательно) ────────────────────
+    # Второй слой поверх детектора формулировок: классификатор
+    # Prompt Guard. Выключен по умолчанию — это отдельные зависимости
+    # (transformers, torch) и отдельная модель; документация в
+    # docs/injection-filter-model.md.
+    injection_guard_enabled: bool = False
+    injection_guard_model: str = "meta-llama/Llama-Prompt-Guard-2-86M"
+    injection_guard_threshold: float = 0.5
 
     # ── Embeddings (п.53) ──────────────────────────────────────────────
     embedding_dim: int = 1024
