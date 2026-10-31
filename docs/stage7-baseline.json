@@ -3,10 +3,10 @@
   "unique_prompts": 4,
   "provider_calls": 4,
   "first_pass_ms": [
-    34,
-    31,
-    30,
-    31
+    27,
+    33,
+    33,
+    32
   ],
   "second_pass_ms": [
     0,

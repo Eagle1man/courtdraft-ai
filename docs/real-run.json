@@ -1,12 +1,99 @@
 {
-  "date": "2026-10-31 14:42",
+  "date": "2026-10-31 16:29",
+  "case_number": "DEMO-001",
+  "version": 3,
+  "provider": "ollama",
+  "model": "qwen2.5:1.5b",
+  "elapsed_seconds": 153.9,
+  "sections": [
+    {
+      "key": "introductory",
+      "name": "Вводная часть",
+      "chars": 293,
+      "latency_ms": 0,
+      "is_mock": false,
+      "needs_review": true,
+      "error": "",
+      "gaps": [
+        "Состав суда: данных нет в материалах дела",
+        "Секретарь судебного заседания: данных нет в материалах дела",
+        "Дата принятия решения: данных нет в материалах дела"
+      ]
+    },
+    {
+      "key": "descriptive",
+      "name": "Описательная часть",
+      "chars": 977,
+      "latency_ms": 65726,
+      "is_mock": false,
+      "needs_review": true,
+      "error": "",
+      "gaps": [
+        "[текст оборван по лимиту ответа]"
+      ]
+    },
+    {
+      "key": "objections",
+      "name": "Доводы ответчика",
+      "chars": 567,
+      "latency_ms": 0,
+      "is_mock": false,
+      "needs_review": false,
+      "error": "",
+      "gaps": []
+    },
+    {
+      "key": "established",
+      "name": "УСТАНОВИЛ",
+      "chars": 672,
+      "latency_ms": 57556,
+      "is_mock": false,
+      "needs_review": true,
+      "error": "",
+      "gaps": [
+        "6."
+      ]
+    },
+    {
+      "key": "motivating",
+      "name": "Мотивировочная часть",
+      "chars": 0,
+      "latency_ms": 30324,
+      "is_mock": false,
+      "needs_review": true,
+      "error": "",
+      "gaps": [
+        "обстоятельство «наступление срока оплаты» не подтверждено ни одним документом дела",
+        "обстоятельство «проценты по ст. 395 ГК РФ (если неустойки нет)» не подтверждено ни одним документом дела",
+        "[текст оборван по лимиту ответа]"
+      ]
+    },
+    {
+      "key": "operative",
+      "name": "РЕШИЛ",
+      "chars": 640,
+      "latency_ms": 0,
+      "is_mock": false,
+      "needs_review": false,
+      "error": "",
+      "gaps": []
+    }
+  ],
+  "verification": {
+    "status": "REVIEW_REQUIRED",
+    "issues": 10,
+    "critical": 0,
+    "high": 1,
+    "claims_checked": 6,
+    "unsupported_claims": 1
+  },
   "preflight": {
-    "ready": false,
+    "ready": true,
     "checks": [
       {
         "name": "provider",
         "state": "OK",
-        "detail": "LLM_PROVIDER=ollama, модель vikhr-7b:latest",
+        "detail": "LLM_PROVIDER=ollama, модель qwen2.5:1.5b",
         "hint": ""
       },
       {
@@ -18,14 +105,14 @@
       {
         "name": "model",
         "state": "OK",
-        "detail": "модель vikhr-7b:latest в реестре",
+        "detail": "модель qwen2.5:1.5b в реестре",
         "hint": ""
       },
       {
         "name": "memory",
-        "state": "FAIL",
-        "detail": "модель 4.0 ГБ не помещается: свободно VRAM нет видеокарты ГБ, RAM 1.4 ГБ",
-        "hint": "взять модель меньше (4b вместо 7b), освободить память или перенести прогон на машину с большей памятью"
+        "state": "WARN",
+        "detail": "модель 0.9 ГБ пойдёт на CPU: свободной памяти 1.4 ГБ из 7.8",
+        "hint": "запустится, но генерация раздела займёт минуты"
       },
       {
         "name": "embeddings",
