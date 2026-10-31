@@ -62,18 +62,20 @@ async def main() -> int:
     parser.add_argument("--num-ctx", type=int, default=4096)
     parser.add_argument("--max-tokens", type=int, default=420)
     parser.add_argument("--reasoning", action="store_true")
+    parser.add_argument("--suffix", default="", help="добавить текст в конец промпта")
+    parser.add_argument("--db", default=None, help="путь к SQLite-базе (по умолчанию real-run.db)")
     args = parser.parse_args()
 
+    db_path = Path(args.db) if args.db else ROOT / "data" / "demo" / "output" / "real-run.db"
     settings = Settings().model_copy(
         update={
             "ollama_num_ctx": args.num_ctx,
-            "database_url": (
-                "sqlite+aiosqlite:///"
-                + (ROOT / "data" / "demo" / "output" / "real-run.db").as_posix()
-            ),
+            "database_url": f"sqlite+aiosqlite:///{db_path.as_posix()}",
         }
     )
     prompt = await load_prompt(args.section, settings)
+    if args.suffix:
+        prompt = f"{prompt}\n\n{args.suffix}"
 
     payload = {
         "model": settings.ollama_model,

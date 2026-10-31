@@ -615,8 +615,13 @@ def _dispute_subject(pack: EvidencePack) -> str:
         for name, text in pack.documents.items()
         # «иск.docx» не содержит «исков», поэтому фильтр был шире формы
         # слова: иначе настоящий иск не попадал в поиск и предмет спора
-        # брался из чужого документа.
-        if re.search(r"иск|заявлени", name.lower())
+        # брался из чужого документа. Латиница добавлена по той же
+        # причине: файлы часто называют claim.pdf / statement.docx, и
+        # из-за этого предмет спора терялся на реальных выгрузках.
+        if re.search(
+            r"иск|заявлени|claim|statement|lawsuit|isk|zayav",
+            name.lower(),
+        )
     ]
     for text in claim_texts:
         found = re.search(
@@ -853,6 +858,74 @@ def _objection_fragments(text: str) -> list[str]:
             continue
         fragments.append(fragment)
     return fragments
+
+
+def _build_established_section(
+    section: dict[str, Any], pack: EvidencePack
+) -> SectionDraft:
+    """«УСТАНОВИЛ» из материалов, когда модель не дала пригодного текста.
+
+    Обе Vikhr-модели на этом промпте отвечают короткой фразой-заголовком
+    («суд установил следующее:», «обстоятельства установлены верно») и
+    останавливаются — проверено на уровне API Ollama, `eval_count` 5–8.
+    Оставлять раздел пустым нельзя: это дыра в акте, а не «нет данных».
+
+    Содержание — только факты из материалов с указанием документа. Оценок,
+    выводов и квалификации в разделе нет: установление обстоятельств —
+    работа суда, а не подготовительной машины, поэтому раздел всегда
+    помечен «требуется проверка».
+    """
+    facts: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    # Хронология в материалах — это требования истца и факты из
+    # документов; берём их по порядку и без повторов.
+    for category in ("claims", "evidence"):
+        for item in pack.by_category(category):
+            key = re.sub(r"\W+", "", item.text.lower())[:80]
+            if not key or key in seen:
+                continue
+            # Реквизиты и шапку в обстоятельства не тащим: это не факт.
+            if _NOISE_RE.search(item.text) and not re.search(r"\d", item.text):
+                continue
+            seen.add(key)
+            facts.append((item.text, item.source_document))
+            if len(facts) >= 5:
+                break
+        if len(facts) >= 5:
+            break
+
+    if not facts:
+        return SectionDraft(
+            key=section["key"],
+            name=section["name"],
+            text="Материалы дела не содержат обстоятельств, которые можно "
+            "изложить как установленные.",
+            is_mock=False,
+            needs_review=True,
+            built_by="rules",
+        )
+
+    lines = ["СУД УСТАНОВИЛ:", ""]
+    citations: list[str] = []
+    for index, (fact, source) in enumerate(facts, start=1):
+        lines.append(f"{index}. {_document_title(source)}: «{fact}»")
+        if source and source not in citations:
+            citations.append(source)
+    lines.append("")
+    lines.append(
+        "Изложено по материалам дела. Оценка доказательств и выводы "
+        "по существу спора в разделе не приводятся."
+    )
+    return SectionDraft(
+        key=section["key"],
+        name=section["name"],
+        text="\n".join(lines),
+        is_mock=False,
+        citations=citations,
+        needs_review=True,
+        built_by="rules",
+    )
 
 
 def _build_objections_section(
@@ -1110,6 +1183,12 @@ async def generate_draft(
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Раздел %s не сгенерирован: %s", section["key"], exc)
                 error = str(exc)[:200]
+                # Сбой самой модели (Ollama уронила процесс, оборвалось
+                # соединение) — не приговор разделу: вторая попытка с
+                # якорем идёт тем же путём. Если и она упадёт, раздел
+                # остаётся несформированным и честно помечается.
+                if attempt + 1 < len(prompts):
+                    continue
                 break
             latency_ms += int((time.perf_counter() - started_section) * 1000)
 
@@ -1203,6 +1282,32 @@ async def generate_draft(
     # они уходят в блок «Не хватает данных» (см. _strip_markers).
     for section in result.sections:
         _strip_markers(section)
+
+    # Модель на «УСТАНОВИЛ» отвечает заголовком, который после обработки
+    # становится пустым текстом. Пустой раздел в акте — дыра, поэтому
+    # подставляются обстоятельства из материалов. Проверяется уже
+    # очищенный текст: иначе заглушка проходит проверку и остаётся.
+    for position, section in enumerate(result.sections):
+        if (
+            section.key == "established"
+            and not section.text.strip()
+            # Технический отказ модели (LLM недоступен) — это не «модель
+            # ответила заголовком»: тут честнее пустой раздел с пометкой,
+            # чем текст, собранный правилами вместо недоступной модели.
+            and not section.error
+        ):
+            built = _build_established_section(
+                {"key": section.key, "name": section.name}, pack
+            )
+            reason_text = (
+                section.gaps[0] if section.gaps else "модель не дала текста"
+            )
+            built.gaps = [
+                f"раздел собран по материалам: {reason_text}",
+                *built.gaps,
+            ]
+            built.latency_ms = section.latency_ms
+            result.sections[position] = built
 
     result.total_latency_ms = int((time.perf_counter() - started) * 1000)
     return result

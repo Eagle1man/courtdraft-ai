@@ -115,6 +115,20 @@ class TestDescriptiveSection:
         assert any("не выделены" in gap for gap in section.gaps), section.gaps
         assert "ТРЕБУЕТ ПРОВЕРКИ" not in section.text
 
+    def test_english_filename_still_gives_subject(self) -> None:
+        """claim.pdf — обычное имя; предмет спора не должен из-за него пропадать."""
+        pack = _pack()
+        pack.documents = {
+            "claim_01.pdf": (
+                "ИСКОВОЕ ЗАЯВЛЕНИЕ\n"
+                "о взыскании задолженности по договору поставки\n"
+                "Взыскать задолженность в размере 150 000 руб."
+            )
+        }
+        pack.items[0].source_document = "claim_01.pdf"
+        section = _section(pack)
+        assert "о взыскании задолженности по договору поставки" in section.text
+
     def test_no_numbers_outside_materials(self) -> None:
         """В тексте нет чисел, которых нет в пакете (главный риск правил)."""
         pack = _pack()
