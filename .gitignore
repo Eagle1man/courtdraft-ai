@@ -146,3 +146,6 @@ models/
 # Машинный перевод открытого набора (xTRam1, MIT): воспроизводится
 # scripts/translate_injection_data.py, в репозиторий не входит.
 data/translated_injections.jsonl
+
+# Нарезка реальных обезличенных абзацев: локальная, в git не входит.
+data/real_benign_fragments.jsonl

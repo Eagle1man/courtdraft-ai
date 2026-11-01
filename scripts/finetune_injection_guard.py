@@ -31,9 +31,45 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
 DATA = ROOT / "data" / "injection_guard"
 HOLDOUT = ROOT / "backend" / "tests" / "data" / "injection_guard_set.jsonl"
 DEFAULT_BASE = "microsoft/mdeberta-v3-base"
+
+#: Оценка памяти на обучение (веса + оптимизатор + активации), ГБ.
+RAM_BY_BASE = {
+    "tiny": 0.6,
+    "rubert-base": 2.0,
+    "mdeberta": 3.2,
+}
+
+
+def estimate_ram(base: str) -> float:
+    lowered = base.lower()
+    for marker, value in RAM_BY_BASE.items():
+        if marker in lowered:
+            return value
+    return 2.5
+
+
+def resources_ok(base: str) -> tuple[bool, str]:
+    """Хватит ли памяти на обучение без GPU. Проверка — не запрет."""
+    import torch
+    from app.llm.preflight import system_memory_gb
+
+    needed = estimate_ram(base)
+    memory = system_memory_gb()
+    if torch.cuda.is_available():
+        return True, f"GPU доступен; оценка памяти {needed:.1f} ГБ (GPU)"
+    if memory is None:
+        return True, "объём памяти узнать не удалось — риск остаётся"
+    _total, available = memory
+    if available < needed:
+        return False, (
+            f"свободно {available:.1f} ГБ, для {base} нужно ~{needed:.1f} ГБ "
+            "(CPU, без GPU) — обучение уйдёт в подкачку"
+        )
+    return True, f"свободно {available:.1f} ГБ, нужно ~{needed:.1f} ГБ"
 
 
 def load_jsonl(path: Path) -> list[dict[str, str]]:
@@ -60,6 +96,10 @@ def dry_run(data_dir: Path, base: str) -> int:
     except ImportError as exc:
         print(f"нет зависимостей: {exc}")
         return 2
+    ok, reason = resources_ok(base)
+    print(f"ресурсы: {reason}")
+    if not ok:
+        print("обучение на этой машине не рекомендуется; запуск с --force игнорирует проверку")
     print("holdout для приёмки:", HOLDOUT.exists())
     print("план: 3 эпохи, lr 2e-5, max_len 256; запуск без --dry-run")
     return 0
@@ -167,10 +207,19 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="проверить данные, не обучая"
     )
+    parser.add_argument(
+        "--force", action="store_true", help="обучать даже при нехватке памяти"
+    )
     args = parser.parse_args()
 
     if args.dry_run:
         return dry_run(Path(args.data), args.base)
+    if not args.force:
+        ok, reason = resources_ok(args.base)
+        print(f"ресурсы: {reason}")
+        if not ok:
+            print("отказ: обучение на этой машине уйдёт в подкачку (--force для обхода)")
+            return 2
     return train(args)
 
 

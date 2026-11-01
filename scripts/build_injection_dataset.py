@@ -288,11 +288,18 @@ def main() -> int:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--size", type=int, default=2000)
-    parser.add_argument("--extra", default=None)
+    parser.add_argument(
+        "--extra",
+        action="append",
+        default=None,
+        help="JSONL с дополнительными строками (можно несколько раз)",
+    )
     parser.add_argument("--out", default=str(OUT))
     args = parser.parse_args()
 
-    extra = load_extra(Path(args.extra)) if args.extra else []
+    extra: list[Row] = []
+    for path in args.extra or []:
+        extra.extend(load_extra(Path(path)))
     rows = build(args.size, extra)
     parts = split(rows)
     write(parts, Path(args.out))
