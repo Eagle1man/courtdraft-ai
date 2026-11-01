@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Опубликовать сайт в отдельный публичный репозиторий.
 
@@ -107,4 +107,5 @@ Write-Info '  Build and deployment → Source: Deploy from a branch'
 Write-Info "  Branch: $Branch · Folder: / (root)"
 Write-Info ''
 Write-Info 'После этого сайт будет доступен по адресу:'
-Write-Info "  https://$($Repository -replace '.*/','').ToLower()/"
+$siteName = ($Repository -replace '.*/', '').ToLower()
+Write-Info "  https://$siteName.github.io/"
