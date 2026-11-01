@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Расписание — демонстрация интерфейса</title>
+<meta name="description" content="Демонстрация интерфейса работы с расписанием: публичная страница, панель управления, правка занятия, конфликты и публикация на сайт вуза.">
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128197;</text></svg>">
+</head>
+<body>
+
+<!--
+  Статическое демо интерфейса расписания.
+
+  Данные — выборка из реальной выгрузки AVTOR (открытое расписание вуза),
+  собранная скриптом scripts/build_schedule_demo.py. Страница ничего не
+  сохраняет: правки живут только в памяти вкладки и сбрасываются кнопкой.
+
+  Здесь нет сервера, FET и базы: демонстрируется интерфейс и сценарий
+  работы. Настоящая панель — D:\FET_v3 (`python run.py web`), она делает
+  сборку, проверку fet-cl и выгрузку по-настоящему.
+-->
+
+<header class="top">
+  <div class="wrap top__inner">
+    <div class="brand">
+      <span class="brand__mark">ИУБиП</span>
+      <div>
+        <h1>Расписание: демонстрация интерфейса</h1>
+        <p class="sub">AVTOR → FET → сайт вуза</p>
+      </div>
+    </div>
+    <nav class="top__nav">
+      <div class="switch" role="group" aria-label="Режим просмотра">
+        <button type="button" id="mode-public" class="switch__btn is-active">Публичная страница</button>
+        <button type="button" id="mode-admin" class="switch__btn">Панель управления</button>
+      </div>
+      <a href="../demo/index.html">Другое демо (ИИ-помощник)</a>
+      <a href="../index.html">На главную</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="notice">
+    <strong>Это демонстрация интерфейса, а не рабочая система.</strong>
+    Данные — выборка из открытого расписания вуза (10 групп, 308 занятий).
+    Правки и публикация здесь имитируются и никуда не сохраняются.
+    Настоящая панель запускается на ВМ вуза и выполняет сборку, проверку
+    FET и выгрузку по-настоящему.
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ══ ПУБЛИЧНАЯ СТРАНИЦА ══════════════════════════════════ -->
+  <section id="view-public">
+    <div class="panel">
+      <div class="panel__head">
+        <div>
+          <h2>Расписание занятий</h2>
+          <p class="muted" id="public-scope">Загрузка…</p>
+        </div>
+        <div class="panel__actions">
+          <button type="button" class="btn btn--ghost" id="share">Ссылка на группу</button>
+          <button type="button" class="btn btn--ghost" id="print">Печать</button>
+        </div>
+      </div>
+
+      <div class="filters">
+        <label>Академия<select id="pub-faculty"></select></label>
+        <label>Группа<select id="pub-group"></select></label>
+        <label>Неделя<select id="pub-week"></select></label>
+      </div>
+
+      <div class="table-wrap">
+        <table class="grid" id="pub-grid"><caption>Расписание группы</caption></table>
+      </div>
+      <p class="hint">
+        Занятия по подгруппам помечены «п1»/«п2». Данные обновляются
+        выгрузкой из AVTOR, а не редактируются на этой странице.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ ПАНЕЛЬ УПРАВЛЕНИЯ ═══════════════════════════════════ -->
+  <section id="view-admin" hidden>
+    <div class="admin">
+      <nav class="tabs" aria-label="Разделы панели">
+        <button type="button" class="tab is-active" data-tab="overview">Обзор</button>
+        <button type="button" class="tab" data-tab="lessons">Занятия</button>
+        <button type="button" class="tab" data-tab="conflicts">Конфликты</button>
+        <button type="button" class="tab" data-tab="publish">Публикация</button>
+      </nav>
+
+      <div class="panel" id="tab-overview">
+        <div class="panel__head">
+          <div>
+            <h2>Обзор</h2>
+            <p class="muted" id="admin-scope">—</p>
+          </div>
+          <button type="button" class="btn btn--ghost" id="reset">Сбросить демо</button>
+        </div>
+        <div class="cards">
+          <div class="stat"><div class="stat__value" id="stat-groups">—</div><div class="stat__label">групп</div></div>
+          <div class="stat"><div class="stat__value" id="stat-lessons">—</div><div class="stat__label">занятий в выборке</div></div>
+          <div class="stat"><div class="stat__value" id="stat-teachers">—</div><div class="stat__label">преподавателей</div></div>
+          <div class="stat"><div class="stat__value" id="stat-rooms">—</div><div class="stat__label">аудиторий</div></div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="runs-table"><caption>Сборка и проверка FET</caption></table>
+        </div>
+        <p class="hint" id="runs-note"></p>
+      </div>
+
+      <div class="panel" id="tab-lessons" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Занятия</h2>
+            <p class="muted">Поиск и правка. В демо изменение живёт до сброса страницы.</p>
+          </div>
+        </div>
+        <div class="filters">
+          <label>Группа<input id="f-group" placeholder="К1А1(9)"></label>
+          <label>Преподаватель<input id="f-teacher" placeholder="Фамилия И.О."></label>
+          <label>Аудитория<input id="f-room" placeholder="201"></label>
+          <label>Дата с<input id="f-from" type="date"></label>
+          <label>Дата по<input id="f-to" type="date"></label>
+          <button type="button" class="btn" id="apply-filter">Найти</button>
+          <button type="button" class="btn btn--ghost" id="clear-filter">Сбросить</button>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="lessons-table"><caption>Занятия</caption></table>
+        </div>
+        <p class="hint" id="lessons-count"></p>
+
+        <div class="editor" id="editor" hidden>
+          <h3>Правка занятия <span class="badge" id="editor-badge"></span></h3>
+          <div class="editor__grid">
+            <label>Дата<input id="e-date" type="date"></label>
+            <label>Пара<select id="e-pair"></select></label>
+            <label>Аудитория<input id="e-room"></label>
+            <label>Преподаватель<input id="e-teacher"></label>
+            <label class="grow">Предмет<input id="e-subject"></label>
+          </div>
+          <div class="diff" id="diff" hidden></div>
+          <div class="editor__actions">
+            <button type="button" class="btn" id="save-edit">Сохранить правку</button>
+            <button type="button" class="btn btn--ghost" id="cancel-edit">Отмена</button>
+            <span class="muted">Демо: изменение не попадёт ни в БД, ни в .fet.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="tab-conflicts" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Конфликты исходных данных</h2>
+            <p class="muted">Примеры того, как панель показывает накладки.</p>
+          </div>
+        </div>
+        <div class="notice notice--warn">
+          В демонстрационной выборке конфликтов нет: настоящая выгрузка
+          проходит с 0 конфликтных слотов. Ниже — <strong>примеры</strong>,
+          чтобы показать вид раздела. Они помечены как демонстрационные и не
+          выдаются за данные.
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="conflicts-table"><caption>Конфликты</caption></table>
+        </div>
+      </div>
+
+      <div class="panel" id="tab-publish" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Публикация на сайт</h2>
+            <p class="muted">Сборка .fet → проверка → выгрузка JSON для сайта.</p>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" data-job="build">Пересобрать .fet</button>
+          <button type="button" class="btn btn--ghost" data-job="validate">Проверить в FET</button>
+          <button type="button" class="btn" data-job="export">Выгрузить на сайт</button>
+          <button type="button" class="btn btn--ghost" id="download">Скачать data.json</button>
+        </div>
+        <div class="joblog" id="joblog" hidden></div>
+        <div class="table-wrap">
+          <table class="table" id="versions-table"><caption>Выгрузки</caption></table>
+        </div>
+        <div class="contract">
+          <h3>Что получает сайт</h3>
+          <pre><code>POST read-file-groups.php
+  do=groups            → {"Академия": {"Группа": 1}}
+  do=schedule&amp;group=X  → {"X": ["дд.мм.гггг - дд.мм.гггг", {"10": [мета, {день: {пара: [...]}}]}]}</code></pre>
+          <p class="muted">
+            Экспорт панели делает ровно эти структуры, поэтому сайт читает
+            расписание без переписывания. Дополнительно собирается автономный
+            просмотрщик — его можно открыть на ВМ и поставить ссылкой с сайта.
+          </p>
+        </div>
+      </div>
+
+      <div class="panel" id="journal-panel">
+        <div class="panel__head">
+          <div>
+            <h2>Журнал изменений</h2>
+            <p class="muted">Каждая правка пишется в журнал; в демо он живёт в памяти.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="journal-table"><caption>Журнал изменений</caption></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel flow">
+    <h2>Как это устроено</h2>
+    <ol class="flow__steps">
+      <li><strong>AVTOR</strong><span>недельники и справочники учебной части</span></li>
+      <li><strong>ETL</strong><span>CP1251 → SQLite, каждая строка с источником</span></li>
+      <li><strong>FET 7.10</strong><span>сборка .fet и проверка реальным fet-cl</span></li>
+      <li><strong>Публикация</strong><span>JSON в формате сайта + автономный просмотрщик</span></li>
+      <li><strong>Человек</strong><span>проверяет конфликты и принимает решение</span></li>
+    </ol>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>Демонстрация интерфейса расписания. Данные — открытое расписание вуза.</span>
+    <span>Изменения на странице не сохраняются.</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
