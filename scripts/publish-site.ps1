@@ -107,5 +107,5 @@ Write-Info '  Build and deployment → Source: Deploy from a branch'
 Write-Info "  Branch: $Branch · Folder: / (root)"
 Write-Info ''
 Write-Info 'После этого сайт будет доступен по адресу:'
-$siteName = ($Repository -replace '.*/', '').ToLower()
-Write-Info "  https://$siteName.github.io/"
+$owner, $repoName = $Repository -split '/'
+Write-Info "  https://$($owner.ToLower()).github.io/$repoName/"
