@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -52,6 +53,12 @@ from app.verification.contracts import DocumentStatus, from_legacy_status
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["drafts"])
+
+# Один проект за раз. При тесте на 20 студентов несколько одновременных
+# генераций на 4 ядрах и 7,5 ГБ ОЗУ приводят к свопу и падению по памяти:
+# модель одна, поэтому параллельные запросы всё равно ждут её освобождения.
+# Очередь здесь — честная: job висит в PENDING, пока слот занят.
+_GENERATION_SLOTS = asyncio.Semaphore(1)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
@@ -233,48 +240,51 @@ async def _run_generation(
     конфигурацию, с которой собрано приложение: тесты и любые сборки
     с нестандартным окружением молча получили бы не ту модель.
     """
-    await jobs.update(job_id, state=JobState.RUNNING, started_at=_now())
+    # Слот берётся до перевода job в RUNNING: пока ждём, задача честно
+    # остаётся PENDING, и интерфейс показывает ожидание, а не работу.
+    async with _GENERATION_SLOTS:
+        await jobs.update(job_id, state=JobState.RUNNING, started_at=_now())
 
-    try:
-        from app.llm import build_llm_provider
+        try:
+            from app.llm import build_llm_provider
 
-        llm = build_llm_provider(cfg)
+            llm = build_llm_provider(cfg)
 
-        async with session_scope(db.factory) as session:
-            service = DraftService(session)
-            draft, version, report, _pack = await service.generate(
-                case_id, provider=llm, actor=actor
+            async with session_scope(db.factory) as session:
+                service = DraftService(session)
+                draft, version, report, _pack = await service.generate(
+                    case_id, provider=llm, actor=actor
+                )
+                draft_id = draft.id
+                version_number = version.version
+                verification_status = report.status.value
+
+            await jobs.update(
+                job_id,
+                state=JobState.DONE,
+                finished_at=_now(),
+                result_draft_id=draft_id,
+                result_version=version_number,
+                verification_status=verification_status,
             )
-            draft_id = draft.id
-            version_number = version.version
-            verification_status = report.status.value
 
-        await jobs.update(
-            job_id,
-            state=JobState.DONE,
-            finished_at=_now(),
-            result_draft_id=draft_id,
-            result_version=version_number,
-            verification_status=verification_status,
-        )
-
-    except CaseNotReadyError as exc:
-        # Нет материалов дела: это состояние данных, а не сбой системы.
-        # Показываем причину, а не «500 Internal Server Error».
-        await jobs.update(
-            job_id,
-            state=JobState.FAILED,
-            finished_at=_now(),
-            error=str(exc),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Формирование проекта не удалось: %s", job_id)
-        await jobs.update(
-            job_id,
-            state=JobState.FAILED,
-            finished_at=_now(),
-            error=f"{type(exc).__name__}: {exc}"[:400],
-        )
+        except CaseNotReadyError as exc:
+            # Нет материалов дела: это состояние данных, а не сбой системы.
+            # Показываем причину, а не «500 Internal Server Error».
+            await jobs.update(
+                job_id,
+                state=JobState.FAILED,
+                finished_at=_now(),
+                error=str(exc),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Формирование проекта не удалось: %s", job_id)
+            await jobs.update(
+                job_id,
+                state=JobState.FAILED,
+                finished_at=_now(),
+                error=f"{type(exc).__name__}: {exc}"[:400],
+            )
 
 
 def _now() -> datetime:

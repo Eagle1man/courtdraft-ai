@@ -9,8 +9,11 @@
 from __future__ import annotations
 
 import builtins
+import json
 import logging
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +81,7 @@ class FeedbackService:
             is_anonymized=payload.is_anonymized,
         )
         await self.feedback.add(feedback)
+        self._append_jsonl(feedback)
         logger.info(
             "Отзыв сохранён: %s/5 %s, роль=%s, дело=%s",
             payload.rating,
@@ -86,6 +90,33 @@ class FeedbackService:
             payload.case_id,
         )
         return feedback
+
+    def _append_jsonl(self, feedback: Feedback) -> None:
+        """Дописать отзыв в общий JSONL-файл.
+
+        БД — основное хранилище, но при тесте на живых пользователях нужен
+        способ забрать все отзывы одним файлом, не выгружая базу. Ошибка
+        записи файла не должна отменять уже сохранённый отзыв.
+        """
+        path = Path(self._cfg.storage_dir).expanduser().resolve().parent / "feedback"
+        path.mkdir(parents=True, exist_ok=True)
+        row = {
+            "created_at": datetime.now(UTC).isoformat(),
+            "case_id": str(feedback.case_id) if feedback.case_id else "",
+            "draft_id": str(feedback.draft_id) if feedback.draft_id else "",
+            "rating": feedback.rating,
+            "verdict": feedback.verdict,
+            "section_name": feedback.section_name,
+            "comment": feedback.comment,
+            "author_role": feedback.author_role,
+            "author_name": feedback.author_name,
+            "model": feedback.model_name,
+        }
+        try:
+            with (path / "feedback.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError:
+            logger.warning("Не удалось дописать отзыв в JSONL-файл", exc_info=True)
 
     async def list(
         self,

@@ -154,9 +154,45 @@ class TestUpdateCase:
         assert response.status_code == 404
 
 
-class TestDocuments:
+class TestDeleteCase:
     async def _case(self, client: AsyncClient) -> str:
-        return (await client.post("/api/cases", json=_payload())).json()["id"]
+        resp = await client.post("/api/cases", json=_payload())
+        data = resp.json()
+        return data["id"]
+
+    async def test_delete_case_returns_204_and_removes_from_list(self, client: AsyncClient) -> None:
+        case_id = await self._case(client)
+        response = await client.delete(f"/api/cases/{case_id}")
+        assert response.status_code == 204
+        assert response.text == ""
+
+        listed = (await client.get("/api/cases")).json()
+        assert listed["total"] == 0
+        assert listed["items"] == []
+
+        get_resp = await client.get(f"/api/cases/{case_id}")
+        assert get_resp.status_code == 404
+
+    async def test_delete_missing_case_returns_404(self, client: AsyncClient) -> None:
+        response = await client.delete("/api/cases/00000000-0000-0000-0000-000000000000")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Дело не найдено"
+
+    async def test_delete_cascade_documents_and_files(self, client: AsyncClient, tmp_path: Path) -> None:
+        case_id = await self._case(client)
+        case_dir = tmp_path / "cases" / "originals" / case_id
+        case_dir.mkdir(parents=True)
+        original = case_dir / "x.txt"
+        original.write_text("содержимое", encoding="utf-8")
+
+        resp = await client.delete(f"/api/cases/{case_id}")
+        assert resp.status_code == 204
+        assert not original.exists()
+        assert not case_dir.exists()
+    async def _case(self, client: AsyncClient) -> str:
+        resp = await client.post("/api/cases", json=_payload())
+        data = resp.json()
+        return data["id"]
 
     async def test_register_document(self, client: AsyncClient) -> None:
         case_id = await self._case(client)

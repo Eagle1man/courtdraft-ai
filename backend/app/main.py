@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import cases, demo, drafts, system
+from app.api.routes import cases, demo, drafts, feedback, system
 from app.config import Settings, get_settings
 from app.db.bootstrap import MIGRATE_HINT, check_schema_drift, ensure_schema
 from app.db.session import describe_url
@@ -130,6 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(system.router)
     app.include_router(cases.router)
     app.include_router(drafts.router)
+    app.include_router(feedback.router)
     app.include_router(demo.router)
 
     @app.get("/api", include_in_schema=False)

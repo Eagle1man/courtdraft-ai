@@ -145,6 +145,8 @@
           </div>
         </div>
         <div class="tools">
+          <button class="btn" id="btn-feedback" hidden
+                  title="Оставить отзыв о проекте и решении по делу">★ Обратная связь</button>
           <button class="btn" id="btn-download" hidden
                   title="Скачать текст проекта отдельным файлом">⬇ Скачать текст</button>
           <button class="btn primary" id="btn-generate" disabled>Сформировать проект</button>
@@ -241,6 +243,47 @@
   </div>
 </div>
 
+<!-- Обратная связь: решение пользователя по делу и его отзыв. -->
+<div class="modal" id="feedback-modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <div>
+        <h3>Обратная связь по делу</h3>
+        <p class="muted">Ваше решение по проекту и замечания. Не вводите персональные данные.</p>
+      </div>
+      <button class="btn" id="feedback-close">✕ Закрыть</button>
+    </div>
+    <div class="modal-body">
+      <label class="label" for="fb-verdict">Решение по проекту</label>
+      <select id="fb-verdict">
+        <option value="ACCEPTED">Принял проект в работу</option>
+        <option value="NEEDS_WORK" selected>Нужна доработка</option>
+        <option value="REJECTED">Отклонил</option>
+      </select>
+
+      <label class="label" for="fb-rating">Оценка проекта</label>
+      <select id="fb-rating">
+        <option value="5">5 — отлично</option>
+        <option value="4">4 — хорошо</option>
+        <option value="3" selected>3 — приемлемо</option>
+        <option value="2">2 — плохо</option>
+        <option value="1">1 — непригодно</option>
+      </select>
+
+      <label class="label" for="fb-name">Кто вы (необязательно)</label>
+      <input type="text" id="fb-name" maxlength="200"
+             placeholder="Студент, преподаватель, судья…">
+
+      <label class="label" for="fb-comment">Отзыв</label>
+      <textarea id="fb-comment" rows="5" maxlength="5000"
+                placeholder="Что получилось, что исправить…"></textarea>
+
+      <div class="alert" id="fb-alert" hidden></div>
+      <button class="btn primary full" id="fb-submit">Отправить отзыв</button>
+    </div>
+  </div>
+</div>
+
 <footer>
   <div class="wrap foot">
     <span>Все данные и модели работают локально. Материалы дела не покидают компьютер.</span>
@@ -248,6 +291,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=0.4.0"></script>
+<script src="app.js?v=0.5.0"></script>
 </body>
 </html>

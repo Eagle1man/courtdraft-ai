@@ -334,12 +334,42 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .cases { display: flex; flex-direction: column; gap: 9px; margin-bottom: 6px; }
 
 .case {
+  position: relative;
   border: 1px solid var(--line);
   border-left: 3px solid transparent;
   border-radius: 10px;
   padding: 11px 12px;
   background: #fff;
   cursor: pointer;
+}
+
+/* Удаление — редкое и необратимое действие, поэтому кнопка маленькая,
+ * серая и появляется только при наведении: случайно не нажать. */
+.case-del {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.case:hover .case-del,
+.case-del:focus-visible {
+  opacity: 1;
+}
+
+.case-del:hover,
+.case-del:focus-visible {
+  background: #fdeceb;
+  color: #b3261e;
 }
 
 .case:hover { background: var(--hover); box-shadow: var(--sh2); }

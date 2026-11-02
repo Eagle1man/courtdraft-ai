@@ -20,7 +20,7 @@ const POLL_INTERVAL = 3000;
 // Версия сборки интерфейса. Должна совпадать с ?v= в index.html:
 // браузер кэширует app.js по этому адресу, и при неизменном ?v он
 // продолжает показывать старый файл, даже когда на сервере новый.
-const UI_BUILD = "0.4.0";
+const UI_BUILD = "0.5.0";
 
 const state = {
   cases: [],
@@ -306,6 +306,21 @@ async function loadCases() {
       `<div class="num">${escapeHtml(item.case_number)}</div>` +
       `<div class="court">${escapeHtml(item.court_name)}</div>` +
       `<div class="row">${chips.join("")}</div>`;
+
+    // Кнопка удаления внутри карточки: клик по ней не должен выбирать дело,
+    // поэтому событие гасится. Подтверждение обязательно — удаление необратимо.
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "case-del";
+    remove.title = "Удалить дело и все материалы";
+    remove.setAttribute("aria-label", `Удалить дело ${item.case_number}`);
+    remove.textContent = "×";
+    remove.onclick = (event) => {
+      event.stopPropagation();
+      removeCase(item);
+    };
+    card.appendChild(remove);
+
     card.onclick = () => {
       selectCase(item.id);
     };
@@ -313,6 +328,56 @@ async function loadCases() {
   });
 
   renderSteps();
+}
+
+/* Удаление дела: спрашиваем подтверждение и честно говорим, что вернуть
+ * нельзя. После удаления выбираем следующее дело, а не оставляем экран
+ * с материалами уже несуществующего дела. */
+async function removeCase(item) {
+  const confirmed = window.confirm(
+    `Удалить дело ${item.case_number} вместе со всеми материалами и проектом?\n\n` +
+      "Вернуть его будет нельзя. Запись об удалении останется только в журнале действий."
+  );
+  if (!confirmed) return;
+
+  const wasCurrent = state.currentCase === item.id;
+
+  try {
+    await api(`/api/cases/${item.id}`, { method: "DELETE" });
+  } catch (error) {
+    showAlert(`Дело не удалено: ${error.message}`);
+    return;
+  }
+
+  if (wasCurrent) {
+    // Незавершённые запросы по удалённому делу больше не нужны: иначе они
+    // перерисуют экран данными, которых уже нет.
+    state.loadSeq += 1;
+    if (state.jobTimer) {
+      clearInterval(state.jobTimer);
+      state.jobTimer = null;
+    }
+    state.currentCase = null;
+    state.loadingCaseId = null;
+    state.documents = [];
+    state.draft = null;
+    resetDraftView();
+    updateDocsLabel();
+    $("doc-list").innerHTML = '<li class="muted">Дело не выбрано</li>';
+    show($("progress"), false);
+    $("btn-generate").disabled = true;
+  }
+
+  await loadCases();
+  if (wasCurrent) {
+    if (state.cases.length) {
+      await selectCase(state.cases[0].id);
+    } else {
+      renderSteps();
+    }
+  }
+
+  showAlert(`Дело ${item.case_number} удалено.`, true);
 }
 
 async function selectCase(caseId) {
@@ -355,6 +420,7 @@ async function selectCase(caseId) {
   show($("verification"), false);
   show($("metrics"), false);
   show($("btn-download"), false);
+  show($("btn-feedback"), true);
   show($("editor"), false);
 
   await loadCases();
@@ -573,6 +639,9 @@ async function uploadFiles(fileList) {
   $("file-input").value = "";
 
   await loadDocuments();
+  // Счётчик файлов в карточке дела берётся из списка дел, поэтому обновляем
+  // и его: иначе после загрузки карточка показывает старое число.
+  await loadCases();
 
   if (loaded.length && !failed.length) {
     showAlert(
@@ -695,6 +764,8 @@ function pollJob(jobId, caseId) {
         $("progress-fill").style.width = "100%";
         showAlert("Проект сформирован и проверен.", true);
         await loadDraft();
+        // Статус дела в списке меняется вместе с проектом.
+        await loadCases();
       } else if (job.state === "FAILED") {
         stopProgress();
         showAlert(`Формирование не удалось: ${humanError(job.error)}`);
@@ -1317,6 +1388,53 @@ $("btn-help").onclick = () => {
 $("help-close").onclick = () => {
   $("help").hidden = true;
 };
+
+/* ── Обратная связь ─────────────────────────────────────────── */
+
+function openFeedback() {
+  if (!state.currentCase) {
+    showAlert("Сначала выберите дело.");
+    return;
+  }
+  $("fb-alert").hidden = true;
+  $("fb-comment").value = "";
+  $("fb-name").value = "";
+  $("fb-verdict").value = "NEEDS_WORK";
+  $("fb-rating").value = "3";
+  show($("feedback-modal"), true);
+}
+
+async function submitFeedback() {
+  if (!state.currentCase) return;
+  const button = $("fb-submit");
+  button.disabled = true;
+  try {
+    // Отзыв привязывается к делу и к последнему проекту на сервере:
+    // пользователю не нужно выбирать версию вручную.
+    await api("/api/feedback", {
+      method: "POST",
+      body: JSON.stringify({
+        case_id: state.currentCase,
+        rating: Number($("fb-rating").value),
+        verdict: $("fb-verdict").value,
+        comment: $("fb-comment").value.trim(),
+        author_role: "student",
+        author_name: $("fb-name").value.trim(),
+      }),
+    });
+    show($("feedback-modal"), false);
+    showAlert("Спасибо! Отзыв сохранён.", true);
+  } catch (error) {
+    $("fb-alert").textContent = `Отзыв не сохранён: ${error.message}`;
+    $("fb-alert").hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$("btn-feedback").onclick = openFeedback;
+$("feedback-close").onclick = () => show($("feedback-modal"), false);
+$("fb-submit").onclick = submitFeedback;
 
 /* ── Запуск ───────────────────────────────────────────────────── */
 

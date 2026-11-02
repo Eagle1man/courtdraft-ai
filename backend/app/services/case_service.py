@@ -96,6 +96,34 @@ class CaseService:
     ) -> list[Case]:
         return await self.cases.list(status=status, limit=limit, offset=offset)
 
+    async def delete_case(self, case_id: uuid.UUID, *, actor: str = "judge") -> str | None:
+        """Удалить дело и всё его содержимое. Вернуть номер дела или None.
+
+        Запись журнала пишется до удаления: у `audit_entries` связь с делом
+        объявлена как `ON DELETE SET NULL`, поэтому запись «дело удалено»
+        остаётся в журнале и после удаления дела. Так удаление не стирает
+        след действия — это требование юридического режима проекта,
+        а не удобство.
+
+        Каскад по документам, проектам и проверкам обеспечивает БД
+        (`ON DELETE CASCADE` + `PRAGMA foreign_keys=ON` для SQLite);
+        проверено тестом `test_cascade_delete_works`.
+        """
+        case = await self.cases.get(case_id)
+        if case is None:
+            return None
+
+        case_number = case.case_number
+        await self.audit.log(
+            "case.deleted",
+            case_id=case_id,
+            actor=actor,
+            case_number=case_number,
+            is_synthetic=case.is_synthetic,
+        )
+        await self.cases.delete(case_id)
+        return case_number
+
     async def set_status(
         self, case_id: uuid.UUID, status: str, *, actor: str = "system"
     ) -> Case | None:

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -19,11 +20,13 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.entities import Case, CaseDocument, CaseStatus, DocumentType, Participant
 from app.schemas.case import (
     CaseCreate,
@@ -36,6 +39,9 @@ from app.schemas.case import (
     ParticipantOut,
 )
 from app.services.case_service import CaseService, db, session_scope
+from app.storage.case_files import delete_case_files
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -192,6 +198,37 @@ async def update_case(
 
     await session.refresh(case)
     return await _to_out(case, session)
+
+
+@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_case(
+    case_id: uuid.UUID,
+    request: Request,
+    session: SessionDep,
+    actor: Annotated[str, Query(max_length=40)] = "judge",
+) -> Response:
+    """DELETE /api/cases/{id} — удалить дело вместе с материалами.
+
+    Удаление — действие человека, а не следствие проверки: сама система
+    ничего не убирает. Запись в журнал остаётся (см. `delete_case`
+    в сервисе), поэтому «дело исчезло» всегда объяснимо.
+
+    Коммит здесь явный, до удаления файлов с диска: иначе откат
+    транзакции оставил бы дело в базе без оригиналов — хуже, чем
+    осиротевшие файлы, которые можно убрать повторно.
+    """
+    service = CaseService(session)
+    case_number = await service.delete_case(case_id, actor=actor)
+    if case_number is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+
+    await session.commit()
+    # Настройки приложения, а не get_settings(): тесты работают со своим
+    # каталогом, и удаление не должно задевать рабочие материалы.
+    cfg = getattr(request.app.state, "settings", None) or get_settings()
+    delete_case_files(cfg, case_id)
+    logger.info("Дело удалено: %s (%s)", case_number, case_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{case_id}/documents", response_model=list[DocumentOut])
