@@ -1,0 +1,21 @@
+[Unit]
+Description=CourtDraft AI backend (project preparation, port 8081)
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntuii
+Group=ubuntuii
+WorkingDirectory=/home/ubuntuii/courtdraft-ai/backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntuii/courtdraft-ai/backend/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8081
+Restart=on-failure
+RestartSec=5
+# SIGINT, а не SIGKILL: uvicorn успевает закрыть соединения с БД и
+# не оставляет после себя journal-файл SQLite с блокировкой.
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

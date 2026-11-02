@@ -37,6 +37,7 @@ logs/
 # Материалы дел не должны попадать в репозиторий: это персональные данные.
 data/cases/
 !data/cases/.gitkeep
+data/feedback/
 data/demo/generated/
 uploads/
 *.pdf
