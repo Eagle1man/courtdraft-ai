@@ -79,7 +79,7 @@ curl -s http://127.0.0.1:8081/api/health
 | Настройки | `/home/ubuntuii/courtdraft-ai/.env` |
 | База | `/home/ubuntuii/courtdraft-ai/data/cases/courtdraft.db` |
 | Отзывы (дубль) | `/home/ubuntuii/courtdraft-ai/data/feedback/feedback.jsonl` |
-| Лог backend | `/home/ubuntuii/backend.log` |
+| Лог backend | `sudo journalctl -u courtdraft-backend -n 100` |
 | Служба | `/etc/systemd/system/courtdraft-backend.service` |
 | Лимиты Ollama | `/etc/systemd/system/ollama.service.d/limits.conf` |
 
@@ -131,7 +131,7 @@ sudo systemctl restart courtdraft-backend
 
 1. `sudo systemctl status courtdraft-backend` — служба запущена?
 2. `curl -s http://127.0.0.1:11434/api/version` — Ollama отвечает?
-3. `tail -50 /home/ubuntuii/backend.log` — что в логе?
+3. `sudo journalctl -u courtdraft-backend -n 100` — что в логе?
 4. `free -m` — есть ли свободная память? При нехватке:
    `sudo systemctl restart ollama`.
 
