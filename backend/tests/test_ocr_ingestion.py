@@ -7,12 +7,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.config import Settings
 from app.ingestion import extract as extract_module
 from app.ingestion.extract import ExtractionError, Page, extract_text
-from app.ingestion.ocr import OcrPage, OcrResult, OcrUnavailableError
+from app.ingestion.ocr import (
+    OcrPage,
+    OcrResult,
+    OcrUnavailableError,
+    _effective_tessdata_dir,
+)
 
 
 def _settings(**overrides: object) -> Settings:
@@ -161,3 +168,17 @@ class TestScannedPdf:
         ocr_meta = result.metadata["ocr"]
         assert isinstance(ocr_meta, dict)
         assert ocr_meta["warnings"] == ["страница 1: распознано слишком мало текста"]
+
+
+class TestTessdataDir:
+    """Путь к языкам, перенесённый из другой ОС, не должен ломать OCR."""
+
+    def test_missing_dir_falls_back_to_system(self, tmp_path: Path) -> None:
+        missing = str(tmp_path / "нет-такого-каталога")
+        assert _effective_tessdata_dir(missing) == ""
+
+    def test_existing_dir_is_kept(self, tmp_path: Path) -> None:
+        assert _effective_tessdata_dir(str(tmp_path)) == str(tmp_path)
+
+    def test_empty_stays_empty(self) -> None:
+        assert _effective_tessdata_dir("") == ""

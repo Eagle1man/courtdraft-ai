@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess  # noqa: S404 - проверка версии и языков Tesseract
@@ -29,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ENGINE = "tesseract"
+logger = logging.getLogger(__name__)
 
 
 class OcrUnavailableError(RuntimeError):
@@ -71,6 +73,25 @@ def _tesseract_binary() -> str:
     return ""
 
 
+def _effective_tessdata_dir(tessdata_dir: str) -> str:
+    """Каталог языков, только если он существует на этой машине.
+
+    `.env` переносится между Windows и Linux, и путь вида
+    `D:/.../.tessdata` на сервере не существует. Молча передать его в
+    Tesseract нельзя: тот ответит «нет языков» и OCR откажет, хотя
+    системный набор языков установлен. Поэтому несуществующий каталог
+    игнорируется — используется тот, что Tesseract нашёл сам.
+    """
+    if not tessdata_dir:
+        return ""
+    if Path(tessdata_dir).is_dir():
+        return tessdata_dir
+    logger.warning(
+        "Каталог tessdata не найден: %s — используется системный", tessdata_dir
+    )
+    return ""
+
+
 def _installed_languages(binary: str, tessdata_dir: str = "") -> set[str]:
     command = [binary, "--list-langs"]
     if tessdata_dir:
@@ -91,6 +112,7 @@ def _installed_languages(binary: str, tessdata_dir: str = "") -> set[str]:
 
 def availability(languages: str, tessdata_dir: str = "") -> tuple[bool, str]:
     """(можно ли распознавать, причина отказа). Ничего не распознаёт."""
+    tessdata_dir = _effective_tessdata_dir(tessdata_dir)
     binary = _tesseract_binary()
     if not binary:
         return False, (
@@ -127,6 +149,7 @@ def ocr_pdf(
     tessdata_dir: str = "",
 ) -> OcrResult:
     """Распознать PDF постранично. Бросает OcrUnavailableError с причиной."""
+    tessdata_dir = _effective_tessdata_dir(tessdata_dir)
     ok, reason = availability(languages, tessdata_dir)
     if not ok:
         raise OcrUnavailableError(reason)
