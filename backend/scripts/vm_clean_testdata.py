@@ -17,14 +17,17 @@ def main() -> None:
     with httpx.Client(base_url=BASE, timeout=60.0) as client:
         cases = client.get("/api/cases", params={"limit": 200}).json()["items"]
         for case in cases:
-            if str(case.get("case_number", "")).startswith("OCR-TEST"):
+            number = str(case.get("case_number", ""))
+            if number.startswith("OCR-TEST") or number.startswith("SMOKE-"):
                 response = client.delete(f"/api/cases/{case['id']}")
-                print("deleted case", case["case_number"], response.status_code)
+                print("deleted case", number, response.status_code)
 
     connection = sqlite3.connect(DB)
     try:
         cur = connection.execute(
-            "DELETE FROM feedback WHERE author_name = 'QA' AND comment LIKE 'Тест отзыва%'"
+            "DELETE FROM feedback WHERE "
+            "(author_name = 'QA' AND comment LIKE 'Тест отзыва%') "
+            "OR author_name LIKE 'SMOKE-%'"
         )
         connection.commit()
         print("deleted feedback rows:", cur.rowcount)
@@ -38,9 +41,10 @@ def main() -> None:
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if row.get("author_name") == "QA" and str(
-                row.get("comment", "")
-            ).startswith("Тест отзыва"):
+            if (
+                row.get("author_name") == "QA"
+                and str(row.get("comment", "")).startswith("Тест отзыва")
+            ) or str(row.get("author_name", "")).startswith("SMOKE-"):
                 continue
             keep.append(line)
         JSONL.write_text("\n".join(keep) + ("\n" if keep else ""), encoding="utf-8")

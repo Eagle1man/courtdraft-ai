@@ -107,7 +107,7 @@ async def create_engine_and_session(
     if is_sqlite(url):
         # SQLite не переносит параллельные записи так, как PostgreSQL.
         # Ограничение нужно, а не «на всякий случай».
-        kwargs["connect_args"] = {"timeout": 30}
+        kwargs["connect_args"] = {"timeout": 60}
     else:
         # На ноутбуке 8 GB лишние соединения PostgreSQL съедают память.
         kwargs["pool_size"] = 5
@@ -142,9 +142,30 @@ def _configure_sqlite(engine: AsyncEngine) -> None:
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_pragma(dbapi_connection: object, _record: object) -> None:
+        # Транзакциями управляет SQLAlchemy через событие "begin" ниже.
+        # Без этого sqlite3 начинает обычную DEFERRED-транзакцию, и
+        # апгрейд «чтение -> запись» при конкуренции падает с
+        # «database is locked» сразу, не дожидаясь busy_timeout.
+        dbapi_connection.isolation_level = None  # type: ignore[attr-defined]
         cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
         cursor.execute("PRAGMA foreign_keys=ON")
+        # WAL: читатели не ждут писателя. Без этого список дел и проверка
+        # состояния встают на время записи проекта.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        # NORMAL достаточно: WAL уже даёт целостность при сбое процесса,
+        # а FULL на каждый коммит замедляет загрузку документов.
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        # Очередь писателей: ждать, а не падать с «database is locked».
+        cursor.execute("PRAGMA busy_timeout=60000")
         cursor.close()
+
+    @event.listens_for(engine.sync_engine, "begin")
+    def _begin_immediate(connection: object) -> None:
+        # BEGIN IMMEDIATE берёт блокировку записи сразу. Иначе транзакция
+        # начинается как читающая, а при первом INSERT пытается стать
+        # пишущей; если между этими моментами записал кто-то другой,
+        # SQLite отдаёт SQLITE_BUSY немедленно и busy_timeout не спасает.
+        connection.exec_driver_sql("BEGIN IMMEDIATE")  # type: ignore[attr-defined]
 
 
 async def create_all(engine: AsyncEngine) -> None:

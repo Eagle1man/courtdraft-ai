@@ -65,6 +65,9 @@ class FeedbackStatsOut(BaseModel):
     average_rating: float = 0.0
     by_verdict: dict[str, int] = Field(default_factory=dict)
     by_role: dict[str, int] = Field(default_factory=dict)
+    # Отдельно по моделям: при квоте сильная и слабая пишут разные дела,
+    # и общая средняя без этой разбивки скрывает разницу.
+    by_model: dict[str, dict[str, float | int]] = Field(default_factory=dict)
 
 
 class FeedbackListOut(BaseModel):

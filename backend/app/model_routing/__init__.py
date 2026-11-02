@@ -5,6 +5,7 @@ from app.model_routing.cache import (
     get_response_cache,
     reset_response_cache,
 )
+from app.model_routing.quota import ModelAssignment, ModelRouter
 from app.model_routing.registry import (
     ModelRoute,
     TaskKind,
@@ -13,7 +14,9 @@ from app.model_routing.registry import (
 )
 
 __all__ = [
+    "ModelAssignment",
     "ModelRoute",
+    "ModelRouter",
     "ResponseCache",
     "TaskKind",
     "get_response_cache",

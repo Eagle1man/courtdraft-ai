@@ -30,6 +30,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.model_routing import ModelRouter
 from app.models.entities import Draft, DraftVersion, EvidenceItem
 from app.schemas.draft import (
     DraftEditIn,
@@ -232,6 +233,7 @@ async def _run_generation(
     case_id: uuid.UUID,
     actor: str,
     cfg: Settings,
+    model: str,
 ) -> None:
     """Сформировать проект вне запроса.
 
@@ -239,6 +241,10 @@ async def _run_generation(
     задача пошла бы по глобальному .env и проигнорировала бы ту
     конфигурацию, с которой собрано приложение: тесты и любые сборки
     с нестандартным окружением молча получили бы не ту модель.
+
+    Модель тоже передаётся явно: она закреплена за делом квотой и не
+    должна зависеть от того, что кто-то поменял в .env между постановкой
+    задачи и её запуском.
     """
     # Слот берётся до перевода job в RUNNING: пока ждём, задача честно
     # остаётся PENDING, и интерфейс показывает ожидание, а не работу.
@@ -248,7 +254,7 @@ async def _run_generation(
         try:
             from app.llm import build_llm_provider
 
-            llm = build_llm_provider(cfg)
+            llm = build_llm_provider(cfg, model=model)
 
             async with session_scope(db.factory) as session:
                 service = DraftService(session)
@@ -323,10 +329,19 @@ async def generate_draft(
             status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено"
         )
 
+    cfg = request.app.state.settings
+    # Модель закрепляется до постановки задачи: иначе два первых дела
+    # могли бы одновременно получить сильную модель сверх квоты.
+    assignment = await ModelRouter(session, cfg).assign(case_id)
+    # Фоновая задача стартует после ответа и работает в своей сессии;
+    # назначение должно быть уже зафиксировано, иначе она его не увидит.
+    await session.commit()
+
     if not wait:
         job = await jobs.create(case_id)
-        cfg = request.app.state.settings
-        background.add_task(_run_generation, job.id, case_id, payload.actor, cfg)
+        background.add_task(
+            _run_generation, job.id, case_id, payload.actor, cfg, assignment.model
+        )
         return DraftJobOut(
             job_id=job.id,
             case_id=case_id,
@@ -339,10 +354,9 @@ async def generate_draft(
         # .env: иначе синхронный режим и фоновый вели бы себя по-разному.
         from app.llm import build_llm_provider
 
-        cfg = request.app.state.settings
         draft, version, report, _pack = await service.generate(
             case_id,
-            provider=build_llm_provider(cfg),
+            provider=build_llm_provider(cfg, model=assignment.model),
             template_name=payload.template_name,
             actor=payload.actor,
         )

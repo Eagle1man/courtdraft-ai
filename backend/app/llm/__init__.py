@@ -14,8 +14,13 @@ from app.llm.mock import MockLLMProvider
 from app.llm.ollama_provider import OllamaProvider
 
 
-def build_llm_provider(settings: Settings | None = None) -> LLMProvider:
+def build_llm_provider(
+    settings: Settings | None = None, *, model: str | None = None
+) -> LLMProvider:
     """Создать провайдера по настройкам.
+
+    `model` переопределяет OLLAMA_MODEL точечно: квота сильной модели
+    решается для конкретного дела, а не для всего процесса.
 
     Если LLM_PROVIDER=ollama, но OLLAMA_ENABLED=false — это противоречие в
     конфигурации. Оно не должно приводить к падению: система обязана
@@ -30,7 +35,7 @@ def build_llm_provider(settings: Settings | None = None) -> LLMProvider:
 
         return OllamaProvider(
             base_url=cfg.ollama_base_url,
-            model=cfg.ollama_model,
+            model=model or cfg.ollama_model,
             timeout_sec=cfg.ollama_timeout_sec,
             num_ctx=cfg.ollama_num_ctx,
             temperature=cfg.ollama_temperature,

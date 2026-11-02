@@ -131,6 +131,11 @@ class DraftService:
         """
         pack = await self.build_pack(case_id)
         saved = await self.save_pack(case_id, pack)
+        # Коммит до вызова модели обязателен. Иначе транзакция записи
+        # (пакет доказательств) остаётся открытой на все 3–4 минуты
+        # генерации и блокирует создание дел, загрузку и отзывы —
+        # SQLite держит блокировку записи до конца транзакции.
+        await self._session.commit()
         logger.info("Пакет доказательств: %d фактов", saved)
 
         template = load_template(name=template_name)

@@ -63,6 +63,7 @@ class CaseService:
         *,
         category: str = "",
         is_synthetic: bool = False,
+        student_code: str = "",
         actor: str = "system",
     ) -> Case:
         """Создать дело. Номер должен быть уникален в пределах суда."""
@@ -85,6 +86,7 @@ class CaseService:
             actor=actor,
             case_number=case_number,
             is_synthetic=is_synthetic,
+            student_code=student_code,
         )
         return case
 

@@ -71,10 +71,18 @@ async def _check_llm(cfg: Settings) -> ComponentHealth:
 
     healthy = await provider.health()
     if healthy:
+        detail = f"{provider.name} / {cfg.ollama_model}"
+        if cfg.model_routing_enabled and cfg.strong_model_quota > 0:
+            strong = cfg.strong_model or cfg.ollama_model
+            weak = cfg.weak_model or cfg.ollama_model
+            detail = (
+                f"{provider.name} / {strong} — первые "
+                f"{cfg.strong_model_quota} дел, затем {weak}"
+            )
         return ComponentHealth(
             name="LLM",
             state=ComponentState.OK,
-            detail=f"{provider.name} / {cfg.ollama_model}",
+            detail=detail,
         )
 
     # В runtime-режиме реальная модель обязательна.

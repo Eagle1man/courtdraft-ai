@@ -22,6 +22,10 @@ class CaseCreate(BaseModel):
     court_name: str = Field(min_length=1, max_length=300)
     case_type: str = Field(min_length=1, max_length=100, examples=["civil"])
     category: str = Field(default="", max_length=100)
+    # Код участника, а не ФИО: нужен, чтобы связать два дела одного
+    # студента при разборе результатов и не хранить лишние персональные
+    # данные. Пустая строка — анонимное дело.
+    student_code: str = Field(default="", max_length=100)
     # Обязательное поле для демо-данных (п.40): синтетическое дело должно
     # быть помечено, чтобы его нельзя было спутать с реальным.
     is_synthetic: bool = Field(

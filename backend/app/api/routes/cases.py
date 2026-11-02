@@ -136,6 +136,7 @@ async def create_case(payload: CaseCreate, session: SessionDep) -> CaseOut:
             payload.case_type,
             category=payload.category,
             is_synthetic=payload.is_synthetic,
+            student_code=payload.student_code,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

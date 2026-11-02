@@ -373,6 +373,21 @@ class AuditRepository:
         )
         return list(result.scalars().all())
 
+    async def count_by_action(self, action: str) -> int:
+        """Сколько записей журнала с таким действием.
+
+        Нужно квоте моделей: считаются выданные сильные слоты, а не
+        текущие дела. Удаление дела не освобождает слот — иначе квоту
+        можно обойти удалением и созданием заново.
+        """
+        stmt = (
+            select(func.count())
+            .select_from(AuditEntry)
+            .where(AuditEntry.action == action)
+        )
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one())
+
 
 class FeedbackRepository:
     """Отзывы пользователей о проекте акта."""
@@ -446,11 +461,25 @@ class FeedbackRepository:
         for role, count in (await self._session.execute(role_stmt)).all():
             by_role[str(role)] = int(count)
 
+        by_model: dict[str, dict[str, float | int]] = {}
+        model_stmt = (
+            select(Feedback.model_name, func.count(), func.avg(Feedback.rating))
+            .group_by(Feedback.model_name)
+        )
+        if case_id is not None:
+            model_stmt = model_stmt.where(Feedback.case_id == case_id)
+        for model, count, avg in (await self._session.execute(model_stmt)).all():
+            by_model[str(model or "unknown")] = {
+                "count": int(count),
+                "average_rating": round(float(avg), 2) if avg is not None else 0.0,
+            }
+
         return {
             "total": total,
             "average_rating": round(float(average), 2) if average is not None else 0.0,
             "by_verdict": by_verdict,
             "by_role": by_role,
+            "by_model": by_model,
         }
 
     async def delete(self, feedback_id: uuid.UUID) -> bool:

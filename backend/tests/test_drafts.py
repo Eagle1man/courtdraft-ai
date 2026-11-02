@@ -695,7 +695,7 @@ class TestRefreshAfterUpdate:
         monkeypatch.setattr(
             llm_module,
             "build_llm_provider",
-            lambda cfg=None: _BrokenProvider(),
+            lambda cfg=None, model=None: _BrokenProvider(),
         )
 
         case_id = await _make_case_with_documents(api_client)

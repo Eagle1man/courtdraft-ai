@@ -19,7 +19,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
-from app.db.repositories import CaseRepository, DraftRepository, FeedbackRepository
+from app.db.repositories import (
+    AuditRepository,
+    CaseRepository,
+    DraftRepository,
+    FeedbackRepository,
+)
 from app.models.entities import Feedback
 from app.schemas.feedback import FeedbackIn
 
@@ -35,13 +40,28 @@ class FeedbackService:
         self.feedback = FeedbackRepository(session)
         self.drafts = DraftRepository(session)
         self.cases = CaseRepository(session)
+        self.audit = AuditRepository(session)
 
-    def _model_name(self) -> str:
-        """Имя модели, которой сформирован проект.
+    async def _model_name(self, case_id: uuid.UUID | None) -> str:
+        """Имя модели, которой сформирован проект по этому делу.
 
-        Нужно для сравнения версий модели между собой: отзывы без этого
-        поля смешивают оценки разных моделей в одну среднюю.
+        Берётся из журнала `draft.generated`, а не из текущих настроек:
+        при квоте два дела в один день считаются разными моделями, и
+        отзыв обязан попасть к той, что писала текст. Иначе сравнение
+        моделей смешало бы оценки и стало бы бесполезным.
         """
+        if case_id is not None:
+            entries = await self.audit.list_for_case(case_id, limit=200)
+            for entry in entries:
+                if entry.action != "draft.generated":
+                    continue
+                details = entry.details or {}
+                model = str(details.get("model") or "")
+                if not model:
+                    continue
+                provider = str(details.get("provider") or "")
+                return f"{provider}:{model}" if provider else model
+
         provider = str(self._cfg.llm_provider.value)
         if provider == "ollama":
             return f"ollama:{self._cfg.ollama_model}"
@@ -76,7 +96,7 @@ class FeedbackService:
             comment=payload.comment,
             author_role=payload.author_role.value,
             author_name=payload.author_name,
-            model_name=self._model_name(),
+            model_name=await self._model_name(payload.case_id),
             draft_text=draft_text,
             is_anonymized=payload.is_anonymized,
         )

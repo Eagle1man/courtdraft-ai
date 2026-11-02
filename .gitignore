@@ -38,6 +38,7 @@ logs/
 data/cases/
 !data/cases/.gitkeep
 data/feedback/
+data/learning/
 data/demo/generated/
 uploads/
 *.pdf
