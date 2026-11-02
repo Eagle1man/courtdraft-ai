@@ -20,7 +20,28 @@ const POLL_INTERVAL = 3000;
 // Версия сборки интерфейса. Должна совпадать с ?v= в index.html:
 // браузер кэширует app.js по этому адресу, и при неизменном ?v он
 // продолжает показывать старый файл, даже когда на сервере новый.
-const UI_BUILD = "0.5.0";
+const UI_BUILD = "0.6.0";
+
+// Код участника хранится в браузере: студент вводит его один раз, и оба
+// его дела (первое и второе) связываются для последующего разбора.
+const STUDENT_KEY = "courtdraft_student_code";
+
+function currentStudentCode() {
+  try {
+    return (localStorage.getItem(STUDENT_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function rememberStudentCode(code) {
+  try {
+    if (code) localStorage.setItem(STUDENT_KEY, code);
+  } catch {
+    // Приватный режим браузера может запрещать localStorage — не повод
+    // ломать создание дела.
+  }
+}
 
 const state = {
   cases: [],
@@ -437,7 +458,7 @@ async function selectCase(caseId) {
 }
 
 /* Создание пустого дела: два понятных поля, без технических форм. */
-async function createCase(number, court) {
+async function createCase(number, court, studentCode = "") {
   const created = await api("/api/cases", {
     method: "POST",
     body: JSON.stringify({
@@ -446,6 +467,7 @@ async function createCase(number, court) {
       case_type: "civil",
       category: "",
       is_synthetic: false,
+      student_code: studentCode,
     }),
   });
 
@@ -465,6 +487,7 @@ async function createDemoCase() {
       case_type: "civil",
       category: "договорные споры",
       is_synthetic: true,
+      student_code: currentStudentCode(),
     }),
   });
 
@@ -1313,13 +1336,16 @@ $("case-form").onsubmit = async (event) => {
   event.preventDefault();
   const number = $("case-number").value.trim();
   const court = $("case-court").value.trim();
+  const studentCode = $("case-student").value.trim();
   if (!number || !court) {
     showAlert("Заполните номер дела и то, кто его рассматривает.");
     return;
   }
   try {
-    await createCase(number, court);
+    rememberStudentCode(studentCode);
+    await createCase(number, court, studentCode);
     $("case-form").reset();
+    $("case-student").value = studentCode;
     $("case-form").hidden = true;
   } catch (error) {
     showAlert(`Не удалось создать дело: ${error.message}`);
@@ -1398,7 +1424,7 @@ function openFeedback() {
   }
   $("fb-alert").hidden = true;
   $("fb-comment").value = "";
-  $("fb-name").value = "";
+  $("fb-name").value = currentStudentCode();
   $("fb-verdict").value = "NEEDS_WORK";
   $("fb-rating").value = "3";
   show($("feedback-modal"), true);
@@ -1439,6 +1465,7 @@ $("fb-submit").onclick = submitFeedback;
 /* ── Запуск ───────────────────────────────────────────────────── */
 
 (async function start() {
+  $("case-student").value = currentStudentCode();
   renderSteps();
   await loadHealth();
   await loadCases();

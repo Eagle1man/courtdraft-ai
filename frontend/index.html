@@ -95,6 +95,8 @@
                    placeholder="Номер дела (например, 2-1234/2026)" required>
             <input type="text" id="case-court" maxlength="300"
                    placeholder="Кто рассматривает (суд, судья)" required>
+            <input type="text" id="case-student" maxlength="100"
+                   placeholder="Код участника, например S01 (не ФИО)">
             <div class="case-form-btns">
               <button type="submit" class="btn primary full">Создать дело</button>
               <button type="button" class="btn full" id="case-form-cancel">Отмена</button>
@@ -291,6 +293,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=0.5.0"></script>
+<script src="app.js?v=0.6.0"></script>
 </body>
 </html>
