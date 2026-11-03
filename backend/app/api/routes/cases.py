@@ -141,6 +141,17 @@ def _ensure_case_visible(case: Case | None) -> Case:
 @router.post("", response_model=CaseOut, status_code=status.HTTP_201_CREATED)
 async def create_case(payload: CaseCreate, session: SessionDep) -> CaseOut:
     """POST /api/cases — создать дело (п.42)."""
+    # Пустой код у настоящего дела — это утечка: такое дело видно всем.
+    # Демо-дело (is_synthetic) исключение: его показывают на стенде.
+    if not payload.student_code.strip() and not payload.is_synthetic:
+        raise HTTPException(
+            status_code=HTTP_422,
+            detail=(
+                "Укажите код участника: без него дело станет видно всем "
+                "участникам. Код выдаёт организатор теста, например S01."
+            ),
+        )
+
     service = CaseService(session)
     try:
         case = await service.create_case(

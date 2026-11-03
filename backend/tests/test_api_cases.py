@@ -81,6 +81,27 @@ class TestCreateCase:
         response = await client.post("/api/cases", json=_payload(typo_field="x"))
         assert response.status_code == 422
 
+    async def test_real_case_without_student_code_rejected(
+        self, client: AsyncClient
+    ) -> None:
+        """Настоящее дело без кода стало бы видно всем — это не создаётся.
+
+        Демо-дело (is_synthetic) исключение: его показывают на стенде.
+        """
+        response = await client.post(
+            "/api/cases", json=_payload(is_synthetic=False, student_code="")
+        )
+        assert response.status_code == 422
+        assert "код участника" in response.json()["detail"].lower()
+
+    async def test_demo_case_without_student_code_allowed(
+        self, client: AsyncClient
+    ) -> None:
+        response = await client.post(
+            "/api/cases", json=_payload(is_synthetic=True, student_code="")
+        )
+        assert response.status_code == 201
+
 
 class TestListCases:
     async def test_empty_list(self, client: AsyncClient) -> None:

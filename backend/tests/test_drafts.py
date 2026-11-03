@@ -1184,6 +1184,7 @@ class TestInjectionWarning:
                 "case_number": "INJ-1",
                 "court_name": "Проверочный суд",
                 "case_type": "civil",
+                "student_code": "T01",
             },
         )
         case_id = case.json()["id"]
@@ -1212,6 +1213,7 @@ class TestInjectionWarning:
                 "case_number": "INJ-2",
                 "court_name": "Проверочный суд",
                 "case_type": "civil",
+                "student_code": "T01",
             },
         )
         case_id = case.json()["id"]

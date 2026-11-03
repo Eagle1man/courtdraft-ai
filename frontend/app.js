@@ -55,6 +55,53 @@ function withStudentCode(path) {
   return `${path}${sep}student_code=${encodeURIComponent(code)}`;
 }
 
+/* Код — не украшение запроса, а ключ к своим делам.
+   Сервер без кода отдаёт всё (это режим администратора), а дело,
+   созданное без кода, видит каждый участник. Поэтому интерфейс без
+   кода не показывает список и не создаёт дела, а спрашивает код. */
+function studentGateOpen() {
+  $("gate-student").value = currentStudentCode();
+  $("gate-error").hidden = true;
+  $("student-gate").hidden = false;
+  $("gate-student").focus();
+}
+
+function renderStudentBadge() {
+  const code = currentStudentCode();
+  $("student-badge").textContent = code || "не выбран";
+  $("btn-student").title = code
+    ? `Текущий код: ${code}. Нажмите, чтобы сменить (например, перед работой следующего участника).`
+    : "Введите код участника";
+}
+
+async function acceptStudentCode() {
+  const code = $("gate-student").value.trim();
+  if (!code) {
+    $("gate-error").hidden = false;
+    $("gate-student").focus();
+    return;
+  }
+  const previous = currentStudentCode();
+  rememberStudentCode(code);
+  $("case-student").value = code;
+  renderStudentBadge();
+  $("student-gate").hidden = true;
+
+  // Код сменился — данные прежнего участника не остаются на экране.
+  if (previous && previous !== code) {
+    state.currentCase = null;
+    state.loadingCaseId = null;
+    state.documents = [];
+    state.draft = null;
+    $("doc-list").innerHTML = "";
+    updateDocsLabel();
+    renderSteps();
+  }
+
+  await loadCases();
+  if (state.cases.length) await selectCase(state.cases[0].id);
+}
+
 const state = {
   cases: [],
   currentCase: null,
@@ -308,6 +355,17 @@ function showDemoBanner() {
 
 async function loadCases() {
   const list = $("case-list");
+
+  // Без кода список не запрашивается: молчаливый запрос без кода
+  // вернул бы дела всех участников — ровно то, от чего защищаемся.
+  if (!currentStudentCode()) {
+    state.cases = [];
+    list.innerHTML =
+      '<p class="muted">Введите код участника — без него дела не показываются.</p>';
+    renderSteps();
+    return;
+  }
+
   try {
     const data = await api(withStudentCode("/api/cases?limit=50"));
     state.cases = data.items || [];
@@ -623,6 +681,11 @@ async function uploadFiles(fileList) {
     return;
   }
 
+  // Дело запоминается один раз: иначе переключение на другое дело во
+  // время загрузки отправит оставшиеся файлы уже в него — материалы
+  // двух дел перемешаются.
+  const caseId = state.currentCase;
+
   const drop = $("dropzone");
   const title = drop.querySelector(".t");
   const previousTitle = title.textContent;
@@ -646,7 +709,7 @@ async function uploadFiles(fileList) {
     try {
       // Без заголовка Content-Type: браузер сам ставит границу multipart.
       const response = await fetch(
-        API + withStudentCode(`/api/cases/${state.currentCase}/documents/upload`),
+        API + withStudentCode(`/api/cases/${caseId}/documents/upload`),
         { method: "POST", body: form }
       );
 
@@ -1350,13 +1413,21 @@ $("case-form").onsubmit = async (event) => {
   event.preventDefault();
   const number = $("case-number").value.trim();
   const court = $("case-court").value.trim();
-  const studentCode = $("case-student").value.trim();
+  const studentCode = $("case-student").value.trim() || currentStudentCode();
   if (!number || !court) {
     showAlert("Заполните номер дела и то, кто его рассматривает.");
     return;
   }
+  // Дело без кода не создаётся: пустой код означает «видно всем», и
+  // именно так чужие материалы попадали в общий список.
+  if (!studentCode) {
+    showAlert("Укажите код участника: без него дело станет видно всем участникам.");
+    $("case-student").focus();
+    return;
+  }
   try {
     rememberStudentCode(studentCode);
+    renderStudentBadge();
     await createCase(number, court, studentCode);
     $("case-form").reset();
     $("case-student").value = studentCode;
@@ -1370,7 +1441,18 @@ $("case-form-cancel").onclick = () => {
   $("case-form").hidden = true;
 };
 
+/* Ввод кода участника: без него интерфейс не начинает работу. */
+$("gate-submit").onclick = acceptStudentCode;
+$("gate-student").onkeydown = (event) => {
+  if (event.key === "Enter") acceptStudentCode();
+};
+$("btn-student").onclick = () => studentGateOpen();
+
 $("btn-demo-case").onclick = async () => {
+  if (!currentStudentCode()) {
+    studentGateOpen();
+    return;
+  }
   try {
     await createDemoCase();
   } catch (error) {
@@ -1480,8 +1562,17 @@ $("fb-submit").onclick = submitFeedback;
 
 (async function start() {
   $("case-student").value = currentStudentCode();
+  renderStudentBadge();
   renderSteps();
   await loadHealth();
+
+  // Без кода — только запрос кода: список дел в этом состоянии показать
+  // нельзя, сервер отдал бы дела всех участников.
+  if (!currentStudentCode()) {
+    studentGateOpen();
+    return;
+  }
+
   await loadCases();
 
   // Дело выбирается автоматически, если оно уже есть: судье не нужно

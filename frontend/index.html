@@ -43,6 +43,7 @@
         <span class="dot" id="health-dot"></span><span id="health">проверка связи…</span>
       </span>
       <span class="ver" id="app-ver"></span>
+      <button class="q" id="btn-student" title="Сменить код участника">код: <b id="student-badge">—</b></button>
       <button class="q" id="btn-help" title="Как пользоваться программой">?</button>
     </div>
   </div>
@@ -64,6 +65,30 @@
 </div>
 
 <div class="notice demo-banner" id="demo-banner" hidden></div>
+
+<!-- Код участника спрашивается до начала работы. Без него сервер отдаёт
+     все дела (пустой код = режим администратора), а дело, созданное без
+     кода, становится видно каждому участнику. Поэтому список дел и
+     создание дела без кода недоступны. -->
+<div class="modal" id="student-gate" hidden>
+  <div class="modal-card" style="width: min(460px, 100%)">
+    <div class="modal-head">
+      <div>
+        <h3>Введите код участника</h3>
+        <p class="muted">По нему программа отделяет ваши дела от работ других участников.</p>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p class="muted">Код выдаёт организатор теста, например <b>S01</b>. ФИО вводить не нужно.</p>
+      <input type="text" id="gate-student" maxlength="100" placeholder="Код участника"
+             autocomplete="off">
+      <p class="muted" id="gate-error" hidden>
+        Введите код — без него программа не покажет и не создаст ни одного дела.
+      </p>
+      <button class="btn primary full" id="gate-submit" style="margin-top: 12px">Продолжить</button>
+    </div>
+  </div>
+</div>
 
 <div class="notice">
   <div class="wrap">
@@ -293,6 +318,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=0.6.0"></script>
+<script src="app.js?v=0.6.2"></script>
 </body>
 </html>
