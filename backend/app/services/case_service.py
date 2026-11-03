@@ -78,6 +78,7 @@ class CaseService:
                 case_type,
                 category=category,
                 is_synthetic=is_synthetic,
+                student_code=student_code or "",
             )
         )
         await self.audit.log(
@@ -86,7 +87,7 @@ class CaseService:
             actor=actor,
             case_number=case_number,
             is_synthetic=is_synthetic,
-            student_code=student_code,
+            student_code=student_code or "",
         )
         return case
 
@@ -94,9 +95,16 @@ class CaseService:
         return await self.cases.get(case_id)
 
     async def list_cases(
-        self, *, status: str | None = None, limit: int = 50, offset: int = 0
+        self,
+        *,
+        status: str | None = None,
+        student_code: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[Case]:
-        return await self.cases.list(status=status, limit=limit, offset=offset)
+        return await self.cases.list(
+            status=status, student_code=student_code, limit=limit, offset=offset
+        )
 
     async def delete_case(self, case_id: uuid.UUID, *, actor: str = "judge") -> str | None:
         """Удалить дело и всё его содержимое. Вернуть номер дела или None.

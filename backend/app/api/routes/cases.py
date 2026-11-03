@@ -149,6 +149,7 @@ async def create_case(payload: CaseCreate, session: SessionDep) -> CaseOut:
 async def list_cases(
     session: SessionDep,
     case_status: Annotated[str | None, Query(alias="status")] = None,
+    student_code: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CaseListOut:
@@ -161,8 +162,10 @@ async def list_cases(
             detail=f"Неизвестный статус: {case_status}",
         )
 
-    cases = await service.list_cases(status=case_status, limit=limit, offset=offset)
-    total = await service.cases.count(status=case_status)
+    cases = await service.list_cases(
+        status=case_status, student_code=student_code, limit=limit, offset=offset
+    )
+    total = await service.cases.count(status=case_status, student_code=student_code)
     return CaseListOut(
         items=[await _to_out(c, session) for c in cases],
         total=total,
@@ -170,12 +173,18 @@ async def list_cases(
 
 
 @router.get("/{case_id}", response_model=CaseOut)
-async def get_case(case_id: uuid.UUID, session: SessionDep) -> CaseOut:
+async def get_case(
+    case_id: uuid.UUID,
+    session: SessionDep,
+    student_code: Annotated[str | None, Query()] = None,
+) -> CaseOut:
     """GET /api/cases/{id} — одно дело."""
     service = CaseService(session)
     case = await service.get_case(case_id)
     if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    if student_code and case.student_code and case.student_code != student_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
     return await _to_out(case, session)
 
 
@@ -237,11 +246,15 @@ async def list_documents(
     case_id: uuid.UUID,
     session: SessionDep,
     document_type: Annotated[str | None, Query(alias="type")] = None,
+    student_code: Annotated[str | None, Query()] = None,
 ) -> list[DocumentOut]:
     """GET /api/cases/{id}/documents — документы дела (п.42)."""
     service = CaseService(session)
-    if await service.get_case(case_id) is None:
+    case = await service.get_case(case_id)
+    if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    if student_code and case.student_code and case.student_code != student_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
     documents = await service.documents.list_for_case(case_id, document_type=document_type)
     return [_to_document_out(d) for d in documents]
@@ -251,7 +264,10 @@ async def list_documents(
     "/{case_id}/documents/{document_id}", response_model=DocumentDetailOut
 )
 async def get_document(
-    case_id: uuid.UUID, document_id: uuid.UUID, session: SessionDep
+    case_id: uuid.UUID,
+    document_id: uuid.UUID,
+    session: SessionDep,
+    student_code: Annotated[str | None, Query()] = None,
 ) -> DocumentDetailOut:
     """GET /api/cases/{id}/documents/{doc_id} — материал дела с текстом.
 
@@ -261,8 +277,11 @@ async def get_document(
     без этого цитате нечего противопоставить.
     """
     service = CaseService(session)
-    if await service.get_case(case_id) is None:
+    case = await service.get_case(case_id)
+    if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    if student_code and case.student_code and case.student_code != student_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
     document = await service.documents.get(document_id)
     if document is None or document.case_id != case_id:
@@ -288,6 +307,7 @@ async def upload_document(
     case_id: uuid.UUID,
     file: Annotated[UploadFile, File(description="Файл материала дела")],
     session: SessionDep,
+    student_code: Annotated[str | None, Query()] = None,
 ) -> DocumentOut:
     """POST /api/cases/{id}/documents/upload — загрузить файл (drag&drop).
 
@@ -296,8 +316,11 @@ async def upload_document(
     всё это безразлично и непонятно.
     """
     service = CaseService(session)
-    if await service.get_case(case_id) is None:
+    case = await service.get_case(case_id)
+    if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    if student_code and case.student_code and case.student_code != student_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
     # Настройки приложения, а не глобальный кэш get_settings(): лимит
     # размера обязан совпадать с тем, что видит это приложение (в тестах
@@ -370,7 +393,10 @@ async def upload_document(
     status_code=status.HTTP_201_CREATED,
 )
 async def register_document(
-    case_id: uuid.UUID, payload: DocumentRegister, session: SessionDep
+    case_id: uuid.UUID,
+    payload: DocumentRegister,
+    session: SessionDep,
+    student_code: Annotated[str | None, Query()] = None,
 ) -> DocumentOut:
     """POST /api/cases/{id}/documents — зарегистрировать документ.
 
@@ -379,8 +405,11 @@ async def register_document(
     путь «дело → документ → чанки» без бинарной загрузки.
     """
     service = CaseService(session)
-    if await service.get_case(case_id) is None:
+    case = await service.get_case(case_id)
+    if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    if student_code and case.student_code and case.student_code != student_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
     sha256 = hashlib.sha256(payload.text.encode("utf-8")).hexdigest()
 
@@ -432,12 +461,18 @@ async def register_document(
 
 
 @router.get("/{case_id}/participants", response_model=list[ParticipantOut])
-async def list_participants(case_id: uuid.UUID, session: SessionDep) -> list[ParticipantOut]:
+async def list_participants(
+    case_id: uuid.UUID,
+    session: SessionDep,
+    student_code: Annotated[str | None, Query()] = None,
+) -> list[ParticipantOut]:
     """Участники дела (п.34)."""
     service = CaseService(session)
     case = await service.get_case(case_id)
     if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    if student_code and case.student_code and case.student_code != student_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
     return [
         ParticipantOut(
@@ -456,6 +491,7 @@ async def add_participant(
     case_id: uuid.UUID,
     payload: dict[str, str],
     session: SessionDep,
+    student_code: Annotated[str | None, Query()] = None,
 ) -> ParticipantOut:
     """Добавить участника дела.
 
@@ -464,8 +500,11 @@ async def add_participant(
     автоматически из текста документов.
     """
     service = CaseService(session)
-    if await service.get_case(case_id) is None:
+    case = await service.get_case(case_id)
+    if case is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    if student_code and case.student_code and case.student_code != student_code:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
     name = str(payload.get("name", "")).strip()
     if not name:

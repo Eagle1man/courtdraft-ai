@@ -185,6 +185,10 @@ class Case(TimestampMixin, Base):
     # Признак синтетических данных (п.40). Обязателен: демо-данные не должны
     # выглядеть как реальное дело.
     is_synthetic: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Код студента для изоляции дел (UI всегда передаёт его при работе от студента).
+    student_code: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", index=True
+    )
 
     documents: Mapped[list[CaseDocument]] = relationship(
         back_populates="case", cascade="all, delete-orphan", lazy="selectin"

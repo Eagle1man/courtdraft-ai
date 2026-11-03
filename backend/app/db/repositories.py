@@ -56,16 +56,19 @@ class CaseRepository:
         self,
         *,
         status: str | None = None,
+        student_code: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Case]:
         stmt = select(Case).order_by(Case.created_at.desc())
         if status:
             stmt = stmt.where(Case.status == status)
+        if student_code:
+            stmt = stmt.where(Case.student_code == student_code)
         stmt = stmt.limit(limit).offset(offset)
         return list((await self._session.execute(stmt)).scalars().all())
 
-    async def count(self, *, status: str | None = None) -> int:
+    async def count(self, *, status: str | None = None, student_code: str | None = None) -> int:
         """Число дел.
 
         Фильтр обязателен и здесь: `total` в ответе списка должен
@@ -75,6 +78,8 @@ class CaseRepository:
         stmt = select(func.count()).select_from(Case)
         if status:
             stmt = stmt.where(Case.status == status)
+        if student_code:
+            stmt = stmt.where(Case.student_code == student_code)
         result = await self._session.execute(stmt)
         return int(result.scalar_one())
 
@@ -500,6 +505,7 @@ def new_case(case_number: str, court_name: str, case_type: str, **extra: Any) ->
         "category": extra.pop("category", ""),
         "status": extra.pop("status", CaseStatus.NEW.value),
         "is_synthetic": extra.pop("is_synthetic", False),
+        "student_code": extra.pop("student_code", ""),
     }
     values.update(extra)
     return values
