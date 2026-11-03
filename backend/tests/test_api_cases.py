@@ -444,3 +444,63 @@ class TestStudentIsolation:
             f"/api/cases/{case_id}/participants", params={"student_code": "S02"}
         )
         assert response.status_code == 403
+
+
+class TestCaseCardFromDocuments:
+    """Номер дела и суд берутся из материалов, а не из ручной карточки.
+
+    Раньше эти поля заполнял человек, и в «кто рассматривает» попадало
+    что угодно: фамилия, «уц». Проект брал суд из документов, а карточка
+    говорила другое — проверка справедливо ругалась на противоречие.
+    """
+
+    async def test_number_and_court_taken_from_document(
+        self, client: AsyncClient
+    ) -> None:
+        created = await client.post(
+            "/api/cases",
+            json=_payload(case_number="б/н 03.11.2026", court_name=""),
+        )
+        assert created.status_code == 201, created.text
+        case_id = created.json()["id"]
+
+        response = await client.post(
+            f"/api/cases/{case_id}/documents",
+            json={
+                "filename": "01_isk.txt",
+                "document_type": "CLAIM",
+                "text": (
+                    "ИСКОВОЕ ЗАЯВЛЕНИЕ\n"
+                    "Мировой судья судебного участка № 123 района Хамовники "
+                    "г. Москвы 119034\n"
+                    "Дело № 2-456/2025\n"
+                    "Истец: Смирнова О.В.\n"
+                ),
+            },
+        )
+        assert response.status_code == 201, response.text
+
+        case = (await client.get(f"/api/cases/{case_id}")).json()
+        assert case["case_number"] == "2-456/2025"
+        assert case["court_name"].startswith("Мировой судья судебного участка № 123")
+
+    async def test_card_stays_when_document_has_no_reqisites(
+        self, client: AsyncClient
+    ) -> None:
+        created = await client.post(
+            "/api/cases", json=_payload(case_number="б/н 03.11.2026", court_name="")
+        )
+        case_id = created.json()["id"]
+
+        await client.post(
+            f"/api/cases/{case_id}/documents",
+            json={
+                "filename": "01_dogovor.txt",
+                "document_type": "CONTRACT",
+                "text": "Договор поставки № 7. Стороны согласовали сроки.",
+            },
+        )
+
+        case = (await client.get(f"/api/cases/{case_id}")).json()
+        assert case["case_number"] == "б/н 03.11.2026"
+        assert case["court_name"] == ""

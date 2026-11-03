@@ -83,7 +83,6 @@ async function acceptStudentCode() {
   }
   const previous = currentStudentCode();
   rememberStudentCode(code);
-  $("case-student").value = code;
   renderStudentBadge();
   $("student-gate").hidden = true;
 
@@ -110,21 +109,38 @@ const state = {
   jobTimer: null,
   loadingCaseId: null,
   loadSeq: 0,
+  loadRetries: 0,
 };
 
 /* ── Работа с API ─────────────────────────────────────────────── */
 
 async function api(path, options = {}) {
-  let response;
-  try {
-    response = await fetch(API + path, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
-  } catch {
-    // Программа не отвечает: это не «HTTP 0», а действие —
-    // проверить, запущен ли она на этом компьютере.
-    throw new Error("Нет связи с программой. Проверьте, что она запущена.");
+  const method = (options.method || "GET").toUpperCase();
+  // Повторяем только чтение: повтор POST мог бы создать второе дело,
+  // если первый запрос дошёл, а ответ потерялся.
+  const attempts = method === "GET" ? 4 : 1;
+
+  let response = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      response = await fetch(API + path, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+      });
+      break;
+    } catch {
+      // Короткий обрыв — перезапуск службы или мигание сети. Это ещё не
+      // «программы нет»: даём ей несколько секунд и пробуем снова.
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+      }
+    }
+  }
+
+  if (!response) {
+    throw new Error(
+      "Нет связи с программой. Проверьте, что она запущена, и обновите страницу."
+    );
   }
 
   if (!response.ok) {
@@ -314,15 +330,23 @@ async function loadHealth() {
       ? `версия ${info.version} · интерфейс ${UI_BUILD}`
       : "";
     console.info(`CourtDraft UI ${UI_BUILD}`);
+    $("health-dot").classList.remove("off");
     if (info.llm_provider === "mock") {
       $("health").textContent = "демонстрационный режим";
       showDemoBanner();
     } else {
       $("health").textContent = "программа готова";
     }
+    // Проверяем связь и дальше: страница может висеть открытой часами,
+    // а службу за это время перезапустят.
+    setTimeout(loadHealth, 60000);
   } catch {
-    $("health").textContent = "нет связи";
+    // Один неудачный запрос — не приговор: при перезапуске службы связь
+    // пропадает на несколько секунд, и «нет связи» навсегда было бы
+    // ложью. Пробуем снова, пока не ответит.
+    $("health").textContent = "переподключение…";
     $("health-dot").classList.add("off");
+    setTimeout(loadHealth, 5000);
   }
 }
 
@@ -369,7 +393,19 @@ async function loadCases() {
   try {
     const data = await api(withStudentCode("/api/cases?limit=50"));
     state.cases = data.items || [];
+    state.loadRetries = 0;
   } catch (error) {
+    // Служба могла перезапускаться: не сдаёмся сразу, но и не долбим
+    // сервер бесконечно.
+    if (state.loadRetries < 3) {
+      state.loadRetries += 1;
+      list.innerHTML =
+        '<p class="muted">Программа не отвечает. Переподключаемся…</p>';
+      renderSteps();
+      setTimeout(loadCases, 5000);
+      return;
+    }
+    state.loadRetries = 0;
     list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
     renderSteps();
     return;
@@ -395,7 +431,7 @@ async function loadCases() {
 
     card.innerHTML =
       `<div class="num">${escapeHtml(item.case_number)}</div>` +
-      `<div class="court">${escapeHtml(item.court_name)}</div>` +
+      `<div class="court">${escapeHtml(item.court_name || "суд — из материалов")}</div>` +
       `<div class="row">${chips.join("")}</div>`;
 
     // Кнопка удаления внутри карточки: клик по ней не должен выбирать дело,
@@ -527,21 +563,32 @@ async function selectCase(caseId) {
   renderSteps();
 }
 
-/* Создание пустого дела: два понятных поля, без технических форм. */
-async function createCase(number, court, studentCode = "") {
+/* Создание пустого дела: одно нажатие.
+
+   Номер дела и суд больше не спрашиваются: в этих полях оказывалось
+   что угодно (фамилия, «уц»), и проект расходился с карточкой. Реквизиты
+   подставляет сервер из загруженных материалов. */
+async function createCase() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const number =
+    `б/н ${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ` +
+    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
   const created = await api("/api/cases", {
     method: "POST",
     body: JSON.stringify({
       case_number: number,
-      court_name: court,
+      court_name: "",
       case_type: "civil",
       category: "",
       is_synthetic: false,
-      student_code: studentCode,
+      student_code: currentStudentCode(),
     }),
   });
 
-  showAlert(`Дело ${created.case_number} создано. Теперь добавьте материалы.`, true);
+  showAlert("Дело создано. Добавьте материалы — номер и суд подставятся сами.", true);
+  await loadCases();
   await selectCase(created.id);
 }
 
@@ -728,7 +775,10 @@ async function uploadFiles(fileList) {
         failed.push(detail);
       }
     } catch {
-      failed.push(`Нет связи с программой — файл «${file.name}» не загружен.`);
+      failed.push(
+        `Программа не ответила — файл «${file.name}» не загружен. ` +
+          "Подождите несколько секунд и обновите страницу: возможно, он уже сохранился."
+      );
     }
   }
 
@@ -1402,43 +1452,21 @@ $("btn-save-edit").onclick = saveEdit;
 $("btn-reverify").onclick = reverify;
 $("btn-download").onclick = downloadDraft;
 
-/* Создание дела: простая форма из двух полей. */
-$("btn-new-case").onclick = () => {
-  const form = $("case-form");
-  form.hidden = !form.hidden;
-  if (!form.hidden) $("case-number").focus();
-};
-
-$("case-form").onsubmit = async (event) => {
-  event.preventDefault();
-  const number = $("case-number").value.trim();
-  const court = $("case-court").value.trim();
-  const studentCode = $("case-student").value.trim() || currentStudentCode();
-  if (!number || !court) {
-    showAlert("Заполните номер дела и то, кто его рассматривает.");
+/* Создание дела — одно нажатие, без формы. */
+$("btn-new-case").onclick = async () => {
+  if (!currentStudentCode()) {
+    studentGateOpen();
     return;
   }
-  // Дело без кода не создаётся: пустой код означает «видно всем», и
-  // именно так чужие материалы попадали в общий список.
-  if (!studentCode) {
-    showAlert("Укажите код участника: без него дело станет видно всем участникам.");
-    $("case-student").focus();
-    return;
-  }
+  const button = $("btn-new-case");
+  button.disabled = true;
   try {
-    rememberStudentCode(studentCode);
-    renderStudentBadge();
-    await createCase(number, court, studentCode);
-    $("case-form").reset();
-    $("case-student").value = studentCode;
-    $("case-form").hidden = true;
+    await createCase();
   } catch (error) {
     showAlert(`Не удалось создать дело: ${error.message}`);
+  } finally {
+    button.disabled = false;
   }
-};
-
-$("case-form-cancel").onclick = () => {
-  $("case-form").hidden = true;
 };
 
 /* Ввод кода участника: без него интерфейс не начинает работу. */
@@ -1561,7 +1589,6 @@ $("fb-submit").onclick = submitFeedback;
 /* ── Запуск ───────────────────────────────────────────────────── */
 
 (async function start() {
-  $("case-student").value = currentStudentCode();
   renderStudentBadge();
   renderSteps();
   await loadHealth();

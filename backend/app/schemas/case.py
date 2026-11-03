@@ -19,7 +19,7 @@ class CaseCreate(BaseModel):
     """Создание дела."""
 
     case_number: str = Field(min_length=1, max_length=100, examples=["DEMO-001"])
-    court_name: str = Field(min_length=1, max_length=300)
+    court_name: str = Field(default="", max_length=300)
     case_type: str = Field(min_length=1, max_length=100, examples=["civil"])
     category: str = Field(default="", max_length=100)
     # Код участника, а не ФИО: нужен, чтобы связать два дела одного

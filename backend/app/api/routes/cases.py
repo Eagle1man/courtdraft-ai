@@ -24,9 +24,11 @@ from fastapi import (
     UploadFile,
     status,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.ingestion.case_card import extract_case_card
 from app.models.entities import Case, CaseDocument, CaseStatus, DocumentType, Participant
 from app.schemas.case import (
     CaseCreate,
@@ -136,6 +138,55 @@ def _ensure_case_visible(case: Case | None) -> Case:
             status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено"
         )
     return case
+
+
+async def _refresh_case_card(
+    service: CaseService, case: Case, session: AsyncSession
+) -> None:
+    """Подставить номер и суд из материалов дела.
+
+    Карточку больше не заполняют руками: в ней оказывалось что угодно
+    (фамилия, «уц»), и проект расходился с карточкой. Материалы — источник
+    этих реквизитов, поэтому после каждой загрузки они переносятся в дело.
+    """
+    documents = await service.documents.list_for_case(case.id)
+    number, court = extract_case_card(document.text for document in documents)
+
+    changed: list[str] = []
+    if number and number != case.case_number:
+        case.case_number = number
+        changed.append("number")
+    if court and court != case.court_name:
+        case.court_name = court
+        changed.append("court")
+    if not changed:
+        return
+
+    await session.flush()
+    await service.audit.log(
+        "case.card_updated",
+        case_id=case.id,
+        actor="ingest",
+        case_number=case.case_number,
+        court_name=case.court_name,
+        fields=changed,
+    )
+
+
+def _case_deleted_while_writing() -> HTTPException:
+    """Дело удалили, пока шла запись файла.
+
+    Внешний ключ не даст записать документ в несуществующее дело — это
+    правильно, но клиенту нужен понятный ответ, а не 500: файл не
+    сохранён, список дел надо обновить.
+    """
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Дело удалили во время загрузки — файл не сохранён. "
+            "Обновите список дел и загрузите его снова."
+        ),
+    )
 
 
 @router.post("", response_model=CaseOut, status_code=status.HTTP_201_CREATED)
@@ -391,6 +442,11 @@ async def upload_document(
         # Текст не извлекся (скан без текстового слоя, битый файл) —
         # документ не создаётся, чтобы пустышка не выглядела загруженной.
         raise HTTPException(status_code=HTTP_422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        # Дело удалили, пока файл разбирался: внешний ключ не пропустит
+        # документ в несуществующее дело. Это не поломка программы.
+        await session.rollback()
+        raise _case_deleted_while_writing() from exc
 
     document = await service.documents.get(result.document_id)
     if document is None:  # pragma: no cover - ingestion только что создал
@@ -399,6 +455,9 @@ async def upload_document(
             detail="Документ записан, но не сохранился. Попробуйте ещё раз.",
         )
     out = _to_document_out(document)
+    # Номер и суд — из самих материалов: после первого документа карточка
+    # дела перестаёт быть «пустой» и совпадает с тем, что в проекте.
+    await _refresh_case_card(service, case, session)
     # Предупреждения этой загрузки (OCR, инструкции в тексте) относятся к
     # конкретному файлу и в базе не хранятся: это сообщение человеку здесь
     # и сейчас, а не свойство документа.
@@ -463,16 +522,22 @@ async def register_document(
         metadata_json=metadata,
         sha256=sha256,
     )
-    await service.documents.add(document)
-    await service.audit.log(
-        "document.registered",
-        case_id=case_id,
-        actor="api",
-        document_id=str(document.id),
-        document_type=payload.document_type,
-        characters=len(payload.text),
-    )
+    try:
+        await service.documents.add(document)
+        await service.audit.log(
+            "document.registered",
+            case_id=case_id,
+            actor="api",
+            document_id=str(document.id),
+            document_type=payload.document_type,
+            characters=len(payload.text),
+        )
+    except IntegrityError as exc:
+        await session.rollback()
+        raise _case_deleted_while_writing() from exc
+
     await session.refresh(document)
+    await _refresh_case_card(service, case, session)
     out = _to_document_out(document)
     out.warnings = warnings
     return out
