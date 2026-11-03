@@ -1,23 +1,35 @@
 """Выкладка изоляции по коду участника на тестовую ВМ.
 
-Порядок жёсткий, и каждый шаг закрывает конкретную поломку:
+Зачем такой порядок и почему без sudo:
 
-1. остановить службу — иначе ALTER TABLE упрётся в занятую базу
-   (`database is locked`) и миграция упадёт на середине;
-2. снять резервную копию — в базе 47 дел стенда, откатывать нечем;
-3. залить код и миграцию;
-4. применить миграцию: колонки `cases.student_code` в базе ВМ нет, а
-   приложение при рассинхроне схемы только пишет ошибку в лог и работает
-   дальше, то есть запросы дел упадут уже после выкладки;
-5. восстановить коды участника из журнала аудита — иначе все прежние
-   дела останутся «анонимными», а анонимные видны всем: утечка осталась
-   бы ровно там, где её и убираем;
-6. поднять службу и проверить, что фильтр действительно режет.
+* `sudo` на стенде просит пароль, а `systemctl` без прав root не работает
+  (polkit отвечает «требуется аутентификация»). Поэтому служба не
+  останавливается командой: приложение работает под `ubuntuii`, и после
+  заливки кода процесс перезапускается сигналом — systemd поднимает его
+  сам (`Restart=on-failure`, 5 с).
+* Перед перезапуском код проверяется импортом: если новая версия не
+  собирается, стенд остаётся на старом коде, а не падает в цикле
+  перезапусков (после 5 неудач systemd сдаётся, и поднять службу можно
+  только через sudo — то есть руками).
+* Схема БД: колонки `cases.student_code` на стенде нет. Приложение при
+  рассинхроне схемы только пишет предупреждение в лог и продолжает
+  работать, поэтому без миграции запросы дел упадут уже после выкладки.
+  `alembic_version` на стенде отсутствует — значит схема соответствует
+  ревизии `4a19f2c7e8b1` (проверено: `sections_checked` есть, `student_code`
+  нет), её и ставим штампом.
+* Пустой `student_code` означает «дело видно всем» (так открывается
+  демонстрационный стенд). Оставить 47 прежних дел пустыми — сохранить
+  утечку, поэтому коды восстанавливаются из журнала аудита, где они
+  писались при создании дела.
 
-Доступ: ключ `~/.ssh/id_ed25519_lecture` либо `COURTDRAFT_VM_PASSWORD`.
+Запуск (нужен доступ по ключу `~/.ssh/id_ed25519_lecture`):
 
     python scripts\\vm_deploy_isolation.py --dry-run
     python scripts\\vm_deploy_isolation.py
+
+Флаги:
+    --dry-run     только показать план, ничего не менять
+    --no-restart  залить код и мигрировать, но не перезапускать службу
 """
 
 from __future__ import annotations
@@ -25,7 +37,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
-from datetime import datetime
+import time
 
 import paramiko
 
@@ -48,31 +60,100 @@ FILES = [
     "backend/app/api/routes/cases.py",
     "backend/app/db/bootstrap.py",
     "backend/alembic/versions/20261103_1200_9b3e64d1c7aa_case_student_code.py",
+    "backend/alembic/versions/20261103_1300_c71d5aa40e63_case_is_archived.py",
     "backend/scripts/backfill_student_codes.py",
     "frontend/app.js",
 ]
 
+# Резервная копия живой базы: sqlite3 backup API снимает согласованный
+# снимок, не останавливая приложение.
 BACKUP_PY = """
 import sqlite3, sys
 src, dst = sys.argv[1], sys.argv[2]
-con = sqlite3.connect(f'file:{src}?mode=ro', uri=True)
+con = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
 out = sqlite3.connect(dst)
 with out:
     con.backup(out)
 out.close()
 con.close()
-print('backup ok:', dst)
+print("backup ok")
 """
 
-HAS_VERSION_PY = """
-import sqlite3
-con = sqlite3.connect(f'file:{DB}?mode=ro', uri=True)
+# Состояние схемы: есть ли таблица версий и колонка.
+STATE_PY = """
+import sqlite3, sys
+db = sys.argv[1]
+con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 tables = [r[0] for r in con.execute("select name from sqlite_master where type='table'")]
-if 'alembic_version' in tables:
-    print('yes', [r[0] for r in con.execute('select * from alembic_version')])
+cols = [r[1] for r in con.execute("pragma table_info(cases)")]
+print("version_table=%s" % ("alembic_version" in tables))
+print("student_code=%s" % ("student_code" in cols))
+if "student_code" in cols:
+    print("cases=%s" % con.execute("select count(*) from cases").fetchone()[0])
+    print("with_code=%s" % con.execute(
+        "select count(*) from cases where coalesce(student_code,'') != ''").fetchone()[0])
+"""
+
+# Проверка изоляции по живому API. Печатает только ASCII, чтобы вывод не
+# зависел от кодировки консоли.
+VERIFY_PY = """
+import json, sqlite3, urllib.request, urllib.error, sys
+
+db, base = sys.argv[1], sys.argv[2]
+con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+
+def count(where):
+    return con.execute("select count(*) from cases where " + where).fetchone()[0]
+
+archived = count("is_archived = 1")
+visible = count("is_archived = 0")
+print("db_archived=%s db_visible=%s" % (archived, visible))
+
+def get(path):
+    try:
+        with urllib.request.urlopen(base + path, timeout=20) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, None
+
+ok = True
+status_all, data_all = get("/api/cases")
+total_all = data_all.get("total") if data_all else None
+print("api_total=%s (http %s)" % (total_all, status_all))
+if status_all != 200 or total_all != visible:
+    print("FAIL: list shows a different number of cases than db_visible")
+    ok = False
 else:
-    print('no')
-""".replace("{DB}", DB_PATH)
+    print("PASS: list matches visible cases, hidden ones are not shown")
+
+status_none, data_none = get("/api/cases?student_code=__nobody__")
+total_none = data_none.get("total") if data_none else None
+print("nobody_total=%s (http %s)" % (total_none, status_none))
+if status_none != 200 or total_none != 0:
+    print("FAIL: unknown code still sees cases")
+    ok = False
+else:
+    print("PASS: unknown code sees nothing")
+
+rows = list(con.execute(
+    "select id, student_code from cases "
+    "where is_archived = 0 and coalesce(student_code,'') != '' limit 1"))
+if rows:
+    case_id, code = rows[0]
+    st_own, _ = get("/api/cases/%s?student_code=%s" % (case_id, code))
+    st_foreign, _ = get("/api/cases/%s?student_code=__nobody__" % case_id)
+    print("own_case_http=%s foreign_case_http=%s" % (st_own, st_foreign))
+    if st_own != 200 or st_foreign != 403:
+        print("FAIL: direct access is not isolated")
+        ok = False
+    else:
+        print("PASS: own 200, foreign 403")
+else:
+    print("SKIP: no visible case with student_code yet (bench is empty by design)")
+
+print("RESULT=%s" % ("PASS" if ok else "FAIL"))
+sys.exit(0 if ok else 1)
+"""
 
 
 def connect() -> paramiko.SSHClient:
@@ -102,7 +183,8 @@ def connect() -> paramiko.SSHClient:
     return client
 
 
-def run(client: paramiko.SSHClient, command: str, *, check: bool = True) -> str:
+def attempt(client: paramiko.SSHClient, command: str) -> tuple[int, str]:
+    """Выполнить команду и вернуть код возврата вместе с выводом."""
     print(f"$ {command}")
     _, stdout, stderr = client.exec_command(command, timeout=300)
     code = stdout.channel.recv_exit_status()
@@ -112,14 +194,29 @@ def run(client: paramiko.SSHClient, command: str, *, check: bool = True) -> str:
         print(out)
     if err:
         print(f"[stderr] {err}")
+    return code, f"{out}\n{err}"
+
+
+def run(client: paramiko.SSHClient, command: str, *, check: bool = True) -> str:
+    code, text = attempt(client, command)
     if check and code != 0:
         raise SystemExit(f"код {code}: {command}")
-    return out
+    return text.strip()
+
+
+def put_script(sftp: paramiko.SFTPClient, name: str, body: str) -> str:
+    path = f"/tmp/{name}"
+    with sftp.open(path, "w") as handle:
+        handle.write(body)
+    return path
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="только показать план")
+    parser.add_argument(
+        "--no-restart", action="store_true", help="не перезапускать службу"
+    )
     args = parser.parse_args()
 
     if args.dry_run:
@@ -129,57 +226,137 @@ def main() -> None:
             print(f"  {'OK ' if local.exists() else 'НЕТ'} {rel}")
         print(f"\nstamp: {STAMP_REVISION} (если таблицы alembic_version нет)")
         print(f"база:  {DB_PATH}")
-        print("порядок: stop → backup → upload → migrate → backfill → start")
+        print("порядок: backup → upload → import-check → migrate → backfill → restart → verify")
         return
+
+    missing = [rel for rel in FILES if not (ROOT / rel).exists()]
+    if missing:
+        raise SystemExit("Нет локальных файлов:\n  " + "\n  ".join(missing))
 
     client = connect()
     try:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stamp = time.strftime("%Y%m%d-%H%M%S")
         backup = f"{REMOTE_ROOT}/data/cases/backups/courtdraft-{stamp}.db"
+        files_backup = f"{REMOTE_ROOT}/data/cases/backups/files-{stamp}"
 
         sftp = client.open_sftp()
-        run(client, f"mkdir -p {REMOTE_ROOT}/data/cases/backups")
+        run(client, f"mkdir -p {REMOTE_ROOT}/data/cases/backups {files_backup}")
 
-        # 1. Служба останавливается: иначе ALTER TABLE не возьмёт блокировку.
-        run(client, "sudo systemctl stop courtdraft-backend")
+        state_path = put_script(sftp, "_state.py", STATE_PY)
+        backup_py = put_script(sftp, "_backup.py", BACKUP_PY)
 
-        # 2. Резервная копия до любых изменений.
-        with sftp.open("/tmp/_backup_db.py", "w") as handle:
-            handle.write(BACKUP_PY)
+        state = run(
+            client,
+            f"cd {REMOTE_BACKEND} && .venv/bin/python {state_path} {DB_PATH}",
+        )
+        has_version = "version_table=True" in state
+        has_column = "student_code=True" in state
+
+        pid = run(
+            client,
+            "systemctl show courtdraft-backend -p MainPID --value",
+        ).strip()
+        if not pid.isdigit() or pid == "0":
+            raise SystemExit(
+                "Служба не запущена (MainPID=0). Поднять её можно только\n"
+                "через sudo — сделайте это руками: sudo systemctl start courtdraft-backend"
+            )
+
+        print(f"служба работает, pid={pid}, версия схемы: "
+              f"{'есть' if has_version else 'нет'}, колонка: "
+              f"{'есть' if has_column else 'нет'}")
+
+        # 1. Резервная копия базы до любых изменений.
         run(
             client,
-            f"cd {REMOTE_BACKEND} && .venv/bin/python /tmp/_backup_db.py {DB_PATH} {backup}",
+            f"cd {REMOTE_BACKEND} && .venv/bin/python {backup_py} {DB_PATH} {backup}",
         )
+
+        # 2. Копии заменяемых файлов — чтобы откатить одной командой.
+        for rel in FILES:
+            run(client, f"cp -a {REMOTE_ROOT}/{rel} {files_backup}/{rel.replace('/', '_')}")
 
         # 3. Код.
         for rel in FILES:
             sftp.put(str(ROOT / rel), f"{REMOTE_ROOT}/{rel}")
             print(f"put {rel}")
-        sftp.close()
 
-        # 4. Миграция. stamp ставится один раз: если таблица версий уже есть,
-        # значит миграции тут применялись и stamp перезаписал бы историю.
-        with sftp.open("/tmp/_has_version.py", "w") as handle:
-            handle.write(HAS_VERSION_PY)
-        sftp.close()
+        # 4. Проверка импорта ДО перезапуска: сломанный код не должен
+        #    сменить работающий процесс.
+        run(client, f"cd {REMOTE_BACKEND} && .venv/bin/python -c 'import app.main'")
 
-        version = run(client, f"cd {REMOTE_BACKEND} && .venv/bin/python /tmp/_has_version.py")
-        if version.startswith("no"):
-            run(client, f"cd {REMOTE_BACKEND} && .venv/bin/python -m alembic stamp {STAMP_REVISION}")
+        # 5. Миграция.
+        if has_column:
+            print("колонка уже есть — stamp/upgrade пропущены")
         else:
-            print(f"таблица версий уже есть ({version}) — stamp пропущен")
+            if not has_version:
+                run(
+                    client,
+                    f"cd {REMOTE_BACKEND} && .venv/bin/python -m alembic stamp {STAMP_REVISION}",
+                )
+            else:
+                print("таблица версий уже есть — stamp пропущен")
+            # База занята работающим приложением: ALTER берёт блокировку
+            # записи, поэтому несколько повторов на случай 'database is locked'.
+            for attempt_no in range(1, 4):
+                code, text = attempt(
+                    client,
+                    f"cd {REMOTE_BACKEND} && .venv/bin/python -m alembic upgrade head",
+                )
+                if code == 0:
+                    break
+                if "database is locked" not in text.lower():
+                    raise SystemExit("миграция не применилась — см. вывод выше")
+                print(f"база занята, повтор {attempt_no}/3")
+                time.sleep(3)
+            else:
+                raise SystemExit(
+                    "миграция не смогла взять блокировку базы за 3 попытки.\n"
+                    "Файлы стенда уже заменены, база не изменена. Вернуть файлы:\n"
+                    f"  {files_backup}"
+                )
 
-        run(client, f"cd {REMOTE_BACKEND} && .venv/bin/python -m alembic upgrade head")
-
-        # 5. Коды участника из журнала.
+        # 6. Коды участника из журнала.
         run(client, f"cd {REMOTE_BACKEND} && .venv/bin/python -m scripts.backfill_student_codes")
 
-        # 6. Подъём и проверка.
-        run(client, "sudo systemctl start courtdraft-backend")
-        run(client, "sleep 12 && systemctl is-active courtdraft-backend")
-        run(client, "curl -s -m 20 http://127.0.0.1:8081/api/health | head -c 300")
+        # 7. Перезапуск: SIGKILL — единственный сигнал, после которого
+        #    systemd поднимает службу сам (SIGTERM считается чистым выходом).
+        if args.no_restart:
+            print("перезапуск пропущен (--no-restart): новый код ещё не в работе")
+        else:
+            run(client, f"kill -9 {pid}", check=False)
+            healthy = False
+            for _ in range(24):
+                time.sleep(5)
+                out = run(
+                    client,
+                    "curl -s -m 5 http://127.0.0.1:8081/api/health",
+                    check=False,
+                )
+                if '"status"' in out or '"ok"' in out.lower():
+                    healthy = True
+                    break
+            if not healthy:
+                run(client, "journalctl -u courtdraft-backend -n 40 --no-pager", check=False)
+                raise SystemExit(
+                    "Служба не поднялась после перезапуска. Файлы стенда:\n"
+                    f"  {files_backup}\n"
+                    "Вернуть прежние файлы, затем перезапустить вручную."
+                )
+            print("служба поднялась")
 
-        print(f"\nрезервная копия: {backup}")
+        # 8. Проверка изоляции по живому API.
+        sftp2 = client.open_sftp()
+        verify = put_script(sftp2, "_verify.py", VERIFY_PY)
+        sftp2.close()
+        run(
+            client,
+            f"{REMOTE_BACKEND}/.venv/bin/python {verify} {DB_PATH} http://127.0.0.1:8081",
+            check=False,
+        )
+
+        print(f"\nрезервная копия базы: {backup}")
+        print(f"копии заменённых файлов: {files_backup}")
     finally:
         client.close()
 

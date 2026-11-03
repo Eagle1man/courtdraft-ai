@@ -189,6 +189,10 @@ class Case(TimestampMixin, Base):
     student_code: Mapped[str] = mapped_column(
         String(100), nullable=False, default="", index=True
     )
+    # Скрытые дела: прежние наработки, которые нельзя показывать студентам.
+    # Данные остаются в базе (их видно в выгрузке), но в интерфейсе такого
+    # дела нет ни в списке, ни по прямой ссылке.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     documents: Mapped[list[CaseDocument]] = relationship(
         back_populates="case", cascade="all, delete-orphan", lazy="selectin"

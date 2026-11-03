@@ -125,6 +125,19 @@ def _to_document_out(document: CaseDocument) -> DocumentOut:
     )
 
 
+def _ensure_case_visible(case: Case | None) -> Case:
+    """Дело, которое можно показать клиенту.
+
+    Скрытые (архивные) дела отвечают 404, а не 403: в интерфейсе их нет
+    вовсе, и 403 подсказывал бы, что дело существует и просто чужое.
+    """
+    if case is None or case.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено"
+        )
+    return case
+
+
 @router.post("", response_model=CaseOut, status_code=status.HTTP_201_CREATED)
 async def create_case(payload: CaseCreate, session: SessionDep) -> CaseOut:
     """POST /api/cases — создать дело (п.42)."""
@@ -181,8 +194,7 @@ async def get_case(
     """GET /api/cases/{id} — одно дело."""
     service = CaseService(session)
     case = await service.get_case(case_id)
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
     return await _to_out(case, session)
@@ -203,8 +215,7 @@ async def update_case(
             case.category = payload.category
             await session.flush()
 
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
 
     await session.refresh(case)
     return await _to_out(case, session)
@@ -251,8 +262,7 @@ async def list_documents(
     """GET /api/cases/{id}/documents — документы дела (п.42)."""
     service = CaseService(session)
     case = await service.get_case(case_id)
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -278,8 +288,7 @@ async def get_document(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -317,8 +326,7 @@ async def upload_document(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -406,8 +414,7 @@ async def register_document(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -469,8 +476,7 @@ async def list_participants(
     """Участники дела (п.34)."""
     service = CaseService(session)
     case = await service.get_case(case_id)
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -501,8 +507,7 @@ async def add_participant(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    if case is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено")
+    _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 

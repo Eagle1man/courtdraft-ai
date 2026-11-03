@@ -61,6 +61,11 @@ class CaseRepository:
         offset: int = 0,
     ) -> list[Case]:
         stmt = select(Case).order_by(Case.created_at.desc())
+        # Скрытые дела не отдаются никогда: это прежние наработки, которые
+        # нельзя показывать студентам. Отдельного параметра «показать
+        # архив» нет намеренно — иначе им воспользовался бы студент и
+        # увидел бы чужие дела.
+        stmt = stmt.where(Case.is_archived.is_(False))
         if status:
             stmt = stmt.where(Case.status == status)
         if student_code:
@@ -76,6 +81,7 @@ class CaseRepository:
         «найдено 12» при пустом списке на странице.
         """
         stmt = select(func.count()).select_from(Case)
+        stmt = stmt.where(Case.is_archived.is_(False))
         if status:
             stmt = stmt.where(Case.status == status)
         if student_code:
@@ -506,6 +512,7 @@ def new_case(case_number: str, court_name: str, case_type: str, **extra: Any) ->
         "status": extra.pop("status", CaseStatus.NEW.value),
         "is_synthetic": extra.pop("is_synthetic", False),
         "student_code": extra.pop("student_code", ""),
+        "is_archived": extra.pop("is_archived", False),
     }
     values.update(extra)
     return values
