@@ -41,6 +41,10 @@ import time
 
 import paramiko
 
+# Консоль Windows не знает часть символов (стрелки, «·»): без этого печать
+# падает посреди выкладки, и шаг остаётся невыполненным.
+sys.stdout.reconfigure(errors="replace")
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 HOST = "10.19.20.20"
 USER = "ubuntuii"
@@ -273,13 +277,17 @@ def main() -> None:
         )
 
         # 2. Копии заменяемых файлов — чтобы откатить одной командой.
+        #    Новых файлов на стенде ещё нет, поэтому отсутствие — не ошибка.
         for rel in FILES:
-            run(client, f"cp -a {REMOTE_ROOT}/{rel} {files_backup}/{rel.replace('/', '_')}")
+            src = f"{REMOTE_ROOT}/{rel}"
+            dst = f"{files_backup}/{rel.replace('/', '_')}"
+            run(client, f"if [ -f {src} ]; then cp -a {src} {dst}; else echo 'новый файл: {rel}'; fi")
 
         # 3. Код.
         for rel in FILES:
             sftp.put(str(ROOT / rel), f"{REMOTE_ROOT}/{rel}")
             print(f"put {rel}")
+        sftp.close()
 
         # 4. Проверка импорта ДО перезапуска: сломанный код не должен
         #    сменить работающий процесс.
@@ -324,7 +332,11 @@ def main() -> None:
         if args.no_restart:
             print("перезапуск пропущен (--no-restart): новый код ещё не в работе")
         else:
-            run(client, f"kill -9 {pid}", check=False)
+            kill_code, _ = attempt(client, f"kill -9 {pid}")
+            if kill_code != 0:
+                raise SystemExit(
+                    f"не удалось перезапустить процесс {pid}: служба осталась на старом коде"
+                )
             healthy = False
             for _ in range(24):
                 time.sleep(5)
