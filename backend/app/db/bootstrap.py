@@ -115,7 +115,7 @@ async def check_schema_drift() -> list[str]:
 
 MIGRATE_HINT = (
     "База отстаёт от моделей. Обновите её командой:\n"
-    "  python -m alembic stamp 0c875f68a577\n"
+    "  python -m alembic stamp 4a19f2c7e8b1\n"
     "  python -m alembic upgrade head\n"
     "\n"
     "Либо удалите файл базы и перезапустите сервис: данные будут потеряны."

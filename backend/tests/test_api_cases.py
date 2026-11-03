@@ -312,3 +312,114 @@ class TestHealthWithDatabase:
             data = (await own.get("/api/health")).json()
 
         assert data["status"] == "OK"
+
+
+class TestStudentIsolation:
+    """Студент видит только свои дела и материалы.
+
+    Код участника — единственный признак принадлежности в этой сборке
+    (аутентификации нет). Поэтому проверяется не только фильтр списка,
+    но и прямой доступ по id: угаданный uuid не должен открывать чужое.
+    """
+
+    async def _case(self, client: AsyncClient, number: str, code: str) -> str:
+        response = await client.post(
+            "/api/cases", json=_payload(case_number=number, student_code=code)
+        )
+        assert response.status_code == 201, response.text
+        return response.json()["id"]
+
+    async def test_list_returns_only_own_cases(self, client: AsyncClient) -> None:
+        await self._case(client, "S-1", "S01")
+        await self._case(client, "S-2", "S02")
+
+        own = (await client.get("/api/cases", params={"student_code": "S01"})).json()
+        assert own["total"] == 1
+        assert [item["case_number"] for item in own["items"]] == ["S-1"]
+
+    async def test_total_matches_filter(self, client: AsyncClient) -> None:
+        """total считается по тому же фильтру, иначе страница пустая при «найдено 2»."""
+        await self._case(client, "S-1", "S01")
+        await self._case(client, "S-2", "S02")
+
+        own = (await client.get("/api/cases", params={"student_code": "S01"})).json()
+        assert own["total"] == len(own["items"]) == 1
+
+    async def test_list_without_code_returns_all(self, client: AsyncClient) -> None:
+        """Администратор на разборе: без кода фильтра нет."""
+        await self._case(client, "S-1", "S01")
+        await self._case(client, "S-2", "S02")
+
+        data = (await client.get("/api/cases")).json()
+        assert data["total"] == 2
+
+    async def test_foreign_case_returns_403(self, client: AsyncClient) -> None:
+        case_id = await self._case(client, "S-1", "S01")
+
+        response = await client.get(f"/api/cases/{case_id}", params={"student_code": "S02"})
+        assert response.status_code == 403
+
+    async def test_own_case_returns_200(self, client: AsyncClient) -> None:
+        case_id = await self._case(client, "S-1", "S01")
+
+        response = await client.get(f"/api/cases/{case_id}", params={"student_code": "S01"})
+        assert response.status_code == 200
+
+    async def test_anonymous_case_visible_to_everyone(self, client: AsyncClient) -> None:
+        """Демо-дело без кода показывает всем — иначе стенд нечем открыть."""
+        case_id = await self._case(client, "DEMO", "")
+
+        response = await client.get(f"/api/cases/{case_id}", params={"student_code": "S02"})
+        assert response.status_code == 200
+
+    async def test_foreign_case_documents_returns_403(self, client: AsyncClient) -> None:
+        case_id = await self._case(client, "S-1", "S01")
+
+        response = await client.get(
+            f"/api/cases/{case_id}/documents", params={"student_code": "S02"}
+        )
+        assert response.status_code == 403
+
+    async def test_foreign_document_detail_returns_403(self, client: AsyncClient) -> None:
+        case_id = await self._case(client, "S-1", "S01")
+        document = await client.post(
+            f"/api/cases/{case_id}/documents",
+            json={"filename": "a.pdf", "document_type": "CLAIM", "text": "секрет"},
+        )
+        document_id = document.json()["id"]
+
+        response = await client.get(
+            f"/api/cases/{case_id}/documents/{document_id}",
+            params={"student_code": "S02"},
+        )
+        assert response.status_code == 403
+
+    async def test_foreign_register_document_returns_403(self, client: AsyncClient) -> None:
+        case_id = await self._case(client, "S-1", "S01")
+
+        response = await client.post(
+            f"/api/cases/{case_id}/documents",
+            params={"student_code": "S02"},
+            json={"filename": "a.pdf", "document_type": "CLAIM", "text": "чужое"},
+        )
+        assert response.status_code == 403
+        docs = (await client.get(f"/api/cases/{case_id}/documents")).json()
+        assert docs == []
+
+    async def test_foreign_upload_returns_403(self, client: AsyncClient) -> None:
+        case_id = await self._case(client, "S-1", "S01")
+
+        response = await client.post(
+            f"/api/cases/{case_id}/documents/upload",
+            params={"student_code": "S02"},
+            files={"file": ("a.txt", b"text", "text/plain")},
+        )
+        assert response.status_code == 403
+
+    async def test_foreign_participants_returns_403(self, client: AsyncClient) -> None:
+        case_id = await self._case(client, "S-1", "S01")
+
+        response = await client.get(
+            f"/api/cases/{case_id}/participants", params={"student_code": "S02"}
+        )
+        assert response.status_code == 403

@@ -43,6 +43,18 @@ function rememberStudentCode(code) {
   }
 }
 
+/* Примешивает код участника к адресу запроса.
+
+   Изоляция держится на том, что сервер фильтрует по коду, а клиент его
+   присылает. Без кода сервер отдаёт всё — это нужно администратору на
+   разборе, поэтому пустое значение не подставляется. */
+function withStudentCode(path) {
+  const code = currentStudentCode();
+  if (!code) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}student_code=${encodeURIComponent(code)}`;
+}
+
 const state = {
   cases: [],
   currentCase: null,
@@ -297,7 +309,7 @@ function showDemoBanner() {
 async function loadCases() {
   const list = $("case-list");
   try {
-    const data = await api("/api/cases?limit=50");
+    const data = await api(withStudentCode("/api/cases?limit=50"));
     state.cases = data.items || [];
   } catch (error) {
     list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
@@ -546,7 +558,7 @@ async function loadDocuments() {
   }
 
   try {
-    const docs = await api(`/api/cases/${caseId}/documents`);
+    const docs = await api(withStudentCode(`/api/cases/${caseId}/documents`));
     if (seq !== state.loadSeq) return;
     if (caseId !== state.currentCase || state.loadingCaseId !== caseId) return;
     state.documents = docs;
@@ -634,7 +646,7 @@ async function uploadFiles(fileList) {
     try {
       // Без заголовка Content-Type: браузер сам ставит границу multipart.
       const response = await fetch(
-        `${API}/api/cases/${state.currentCase}/documents/upload`,
+        API + withStudentCode(`/api/cases/${state.currentCase}/documents/upload`),
         { method: "POST", body: form }
       );
 
@@ -702,7 +714,9 @@ async function openDoc(docId) {
   show($("doc-viewer"), true);
 
   try {
-    const detail = await api(`/api/cases/${state.currentCase}/documents/${docId}`);
+    const detail = await api(
+      withStudentCode(`/api/cases/${state.currentCase}/documents/${docId}`)
+    );
     const type = label(DOC_TYPE_TEXT, detail.document_type);
     const hidden = detail.placeholders.length
       ? ` · скрыто значений: ${detail.placeholders.length}`
