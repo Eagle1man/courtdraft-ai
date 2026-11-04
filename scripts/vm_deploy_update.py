@@ -126,7 +126,7 @@ def build_archive() -> bytes:
                     continue
                 if path.suffix in EXCLUDE_SUFFIXES:
                     continue
-                tar.add(path, arcname=str(path.relative_to(ROOT)))
+                tar.add(path, arcname=path.relative_to(ROOT).as_posix())
     return buf.getvalue()
 
 
