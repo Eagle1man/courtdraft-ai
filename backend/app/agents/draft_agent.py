@@ -24,6 +24,7 @@ from typing import Any
 
 from app.agents.evidence_pack import EvidencePack
 from app.config import Settings, get_settings
+from app.drafting.date_guard import mark_unsourced_dates
 from app.drafting.numeric_guard import mark_unsourced_amounts
 from app.drafting.section_quality import unusable_reason
 from app.llm import build_llm_provider
@@ -1246,13 +1247,26 @@ async def generate_draft(
                     pack.documents.values(),
                     pack.amounts,
                 )
+                # Даты проверяются тем же правилом: на живом тесте 8 из
+                # 26 проектов содержали даты, которых в материалах нет.
+                marked, unsourced_dates = mark_unsourced_dates(
+                    marked,
+                    pack.documents.values(),
+                    pack.dates,
+                )
                 text = marked
-                needs_review = candidate_review or bool(unsourced)
+                needs_review = (
+                    candidate_review or bool(unsourced) or bool(unsourced_dates)
+                )
                 is_mock = response.is_mock
                 error = ""
                 for amount in unsourced:
                     gaps.append(
                         f"сумма {amount.raw} руб. не найдена в материалах дела"
+                    )
+                for item in unsourced_dates:
+                    gaps.append(
+                        f"дата {item.raw} не найдена в материалах дела"
                     )
                 # Сумма может быть в деле, но относиться к другому
                 # требованию («проценты 80 000» вместо «долг 80 000»).
