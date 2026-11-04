@@ -18,7 +18,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.draft_agent import DraftResult, generate_draft
-from app.agents.evidence_pack import EvidencePack, build_evidence_pack, load_template
+from app.agents.evidence_pack import (
+    EvidencePack,
+    build_evidence_pack,
+    load_template,
+    template_name_for_case,
+)
 from app.db.repositories import (
     AuditRepository,
     CaseRepository,
@@ -71,7 +76,11 @@ class DraftService:
             )
 
         return build_evidence_pack(
-            case.case_number, case.court_name, case.category, documents
+            case.case_number,
+            case.court_name,
+            case.category,
+            documents,
+            case_type=case.case_type,
         )
 
     async def save_pack(self, case_id: uuid.UUID, pack: EvidencePack) -> int:
@@ -120,15 +129,22 @@ class DraftService:
         case_id: uuid.UUID,
         *,
         provider: LLMProvider | None = None,
-        template_name: str = "civil_judgment",
+        template_name: str | None = None,
         actor: str = "system",
     ) -> tuple[Draft, DraftVersion, VerificationReport, EvidencePack]:
         """Сформировать проект, сохранить его и результат проверки.
+
+        Шаблон выбирается по виду судопроизводства дела (``case_type``),
+        если он не задан явно. Раньше здесь стоял ``civil_judgment``
+        по умолчанию: проект по арбитражному делу применял ГПК РФ.
 
         Возвращает проект, созданную версию, отчёт проверки и пакет —
         всё вместе, потому что вызывающему коду нужно показать пользователю
         и текст, и то, на что он опирается, и что в нём не так.
         """
+        case = await self.cases.get(case_id)
+        if case is None:
+            raise LookupError(f"Дело {case_id} не найдено")
         pack = await self.build_pack(case_id)
         saved = await self.save_pack(case_id, pack)
         # Коммит до вызова модели обязателен. Иначе транзакция записи
@@ -138,7 +154,9 @@ class DraftService:
         await self._session.commit()
         logger.info("Пакет доказательств: %d фактов", saved)
 
-        template = load_template(name=template_name)
+        template = load_template(
+            name=template_name or template_name_for_case(case.case_type)
+        )
         draft_result = await generate_draft(pack, template, provider=provider)
 
         report = verify_draft(draft_result, pack)
@@ -147,7 +165,7 @@ class DraftService:
             case_id,
             draft_result,
             report,
-            template_name=template_name,
+            template_name=str(template.get("name") or ""),
             actor=actor,
         )
 

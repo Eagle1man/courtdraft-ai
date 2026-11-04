@@ -427,6 +427,10 @@ async function loadCases() {
       `<span class="chip ${caseStatusChip(item.status)}">${escapeHtml(label(CASE_STATUS_TEXT, item.status))}</span>`,
       `<span class="chip grey">${count} ${plural(count, "файл", "файла", "файлов")}</span>`,
     ];
+    // Вид судопроизводства определяется по материалам. Пока признаков
+    // нет — чипа нет: пустой чип выглядел бы как ошибка интерфейса.
+    if (item.case_type === "arbitration") chips.push('<span class="chip">арбитраж</span>');
+    else if (item.case_type === "civil") chips.push('<span class="chip grey">гражданское</span>');
     if (item.is_synthetic) chips.push('<span class="chip bronze">демо</span>');
 
     card.innerHTML =
@@ -580,7 +584,6 @@ async function createCase() {
     body: JSON.stringify({
       case_number: number,
       court_name: "",
-      case_type: "civil",
       category: "",
       is_synthetic: false,
       student_code: currentStudentCode(),

@@ -170,6 +170,20 @@ def _format_participants(pack: EvidencePack) -> str:
     return "; ".join(pack.participants)
 
 
+def _jurisdiction_note(case_type: str) -> str:
+    """Строка о виде судопроизводства для подсказки модели.
+
+    Без неё модель получала только «Суд: …» и по умолчанию применяла
+    ГПК РФ — даже к арбитражным делам. Пустой тип не упоминается:
+    выдумывать его в промпте нельзя.
+    """
+    if case_type == "arbitration":
+        return "Вид судопроизводства: арбитражный (АПК РФ). "
+    if case_type == "civil":
+        return "Вид судопроизводства: гражданский (ГПК РФ). "
+    return ""
+
+
 #: Документы, которые модель обязана видеть целиком.
 #:
 #: Разметка пакета оставляет по одной фразе на признак, и в подсказку
@@ -305,6 +319,7 @@ def build_section_prompt(
     facts = (
         f"Дело № {pack.case_number}. Суд: {pack.court_name}. "
         f"Категория: {pack.category}. "
+        f"{_jurisdiction_note(pack.jurisdiction)}"
         f"Участники: {_format_participants(pack)}. "
         f"{_format_amounts(pack)}. "
         f"Даты: {'; '.join(pack.dates[:8]) or 'не указаны'}."

@@ -504,3 +504,69 @@ class TestCaseCardFromDocuments:
         case = (await client.get(f"/api/cases/{case_id}")).json()
         assert case["case_number"] == "б/н 03.11.2026"
         assert case["court_name"] == ""
+
+    async def test_case_type_taken_from_arbitration_document(
+        self, client: AsyncClient
+    ) -> None:
+        """Арбитражный иск меняет тип дела, даже если в карточке «civil».
+
+        Раньше интерфейс всегда отправлял «civil», и проект по
+        арбитражному делу применял ГПК РФ (21 случай из 26 на тесте).
+        """
+        created = await client.post(
+            "/api/cases",
+            json=_payload(
+                case_number="б/н 04.11.2026", court_name="", case_type="civil"
+            ),
+        )
+        assert created.status_code == 201, created.text
+        case_id = created.json()["id"]
+
+        response = await client.post(
+            f"/api/cases/{case_id}/documents",
+            json={
+                "filename": "01_isk.txt",
+                "document_type": "CLAIM",
+                "text": (
+                    "ИСКОВОЕ ЗАЯВЛЕНИЕ\n"
+                    "В Арбитражный суд города Москвы\n"
+                    "Дело № А40-12345/2026\n"
+                    "Истец: ООО «Ромашка»\n"
+                ),
+            },
+        )
+        assert response.status_code == 201, response.text
+
+        case = (await client.get(f"/api/cases/{case_id}")).json()
+        assert case["case_type"] == "arbitration"
+
+    async def test_case_type_stays_when_document_has_no_signs(
+        self, client: AsyncClient
+    ) -> None:
+        created = await client.post(
+            "/api/cases",
+            json=_payload(case_number="б/н 04.11.2026", court_name=""),
+        )
+        case_id = created.json()["id"]
+
+        await client.post(
+            f"/api/cases/{case_id}/documents",
+            json={
+                "filename": "01_dogovor.txt",
+                "document_type": "CONTRACT",
+                "text": "Договор поставки № 7. Стороны согласовали сроки.",
+            },
+        )
+
+        case = (await client.get(f"/api/cases/{case_id}")).json()
+        assert case["case_type"] == "civil"
+
+    async def test_create_without_case_type_is_allowed(
+        self, client: AsyncClient
+    ) -> None:
+        """Пустой тип — «определить по материалам», а не ошибка валидации."""
+        payload = _payload(case_number="б/н 04.11.2026")
+        payload.pop("case_type")
+        response = await client.post("/api/cases", json=payload)
+        assert response.status_code == 201, response.text
+        assert response.json()["case_type"] == ""

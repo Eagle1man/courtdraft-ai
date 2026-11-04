@@ -129,6 +129,14 @@ class EvidencePack:
     court_from_docs: str = ""
     case_number_from_docs: str = ""
 
+    #: Вид судопроизводства дела: ``civil``, ``arbitration`` или пусто.
+    #:
+    #: Нужен генератору (выбор шаблона и норм в промпте) и верификатору
+    #: (расхождение кодекса в проекте с видом дела). Раньше тип дела в
+    #: пакет не попадал вовсе, и проект по арбитражному делу применял
+    #: ГПК РФ — 21 случай из 26 на живом тесте.
+    jurisdiction: str = ""
+
     def by_category(self, category: str) -> list[EvidenceItem]:
         return [item for item in self.items if item.category == category]
 
@@ -171,8 +179,31 @@ class EvidencePack:
         return "\n".join(lines)
 
 
+#: Какой шаблон соответствует виду судопроизводства.
+#:
+#: `world_judgment` намеренно не выбирается автоматически: по ч. 3–4
+#: ст. 199 ГПК РФ он содержит только вводную и резолютивную части, а на
+#: тесте нужен полный проект. Мировой судья остаётся гражданским делом,
+#: суд берётся из материалов.
+TEMPLATE_BY_CASE_TYPE: dict[str, str] = {
+    "arbitration": "arbitration_judgment",
+    "civil": "civil_judgment",
+}
+
+DEFAULT_TEMPLATE = "civil_judgment"
+
+
+def template_name_for_case(case_type: str) -> str:
+    """Шаблон по виду судопроизводства дела.
+
+    Неизвестный или пустой тип — гражданский шаблон: это прежнее
+    поведение, и оно не может ухудшить уже существующие дела.
+    """
+    return TEMPLATE_BY_CASE_TYPE.get((case_type or "").strip().lower(), DEFAULT_TEMPLATE)
+
+
 def load_template(
-    settings: Settings | None = None, *, name: str = "civil_judgment"
+    settings: Settings | None = None, *, name: str = DEFAULT_TEMPLATE
 ) -> dict[str, Any]:
     """Загрузить шаблон судебного акта по имени.
 
@@ -530,6 +561,7 @@ def build_evidence_pack(
     category: str,
     documents: list[CaseDocument],
     *,
+    case_type: str = "",
     settings: Settings | None = None,
 ) -> EvidencePack:
     """Собрать пакет доказательств из документов дела.
@@ -538,7 +570,12 @@ def build_evidence_pack(
     Факта без источника не бывает — иначе модель получит «факты из
     воздуха» и подтвердит их как обстоятельства дела.
     """
-    pack = EvidencePack(case_number=case_number, court_name=court_name, category=category)
+    pack = EvidencePack(
+        case_number=case_number,
+        court_name=court_name,
+        category=category,
+        jurisdiction=(case_type or "").strip().lower(),
+    )
 
     grouped: dict[str, list[tuple[CaseDocument, str]]] = defaultdict(list)
     all_amounts: list[str] = []

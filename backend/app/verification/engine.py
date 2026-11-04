@@ -504,6 +504,49 @@ def _check_penalty_basis(
         return
 
 
+_NEGATED_CODE = re.compile(
+    r"не\s+(?:примен|подлеж|распростран|действу)|нормы\s+\w+\s+не\s+примен",
+    re.IGNORECASE,
+)
+
+_CODE_PATTERNS = {
+    "ГПК РФ": re.compile(
+        r"\bГПК(?:\s*РФ)?\b|гражданск\w+\s+процессуальн\w+\s+кодекс", re.IGNORECASE
+    ),
+    "АПК РФ": re.compile(
+        r"\bАПК(?:\s*РФ)?\b|арбитражн\w+\s+процессуальн\w+\s+кодекс", re.IGNORECASE
+    ),
+}
+
+#: Какой кодекс чужд виду судопроизводства.
+_FOREIGN_CODE = {"arbitration": "ГПК РФ", "civil": "АПК РФ"}
+
+
+def _foreign_codec_mentions(text: str, jurisdiction: str) -> list[str]:
+    """Упоминания чужого кодекса без отрицания.
+
+    Отрицание важно: правильная фраза «нормы ГПК РФ к арбитражному
+    делу не применяются» не должна считаться ошибкой — иначе проверка
+    ругалась бы на собственный шаблон.
+    """
+    foreign = _FOREIGN_CODE.get(jurisdiction)
+    pattern = _CODE_PATTERNS.get(foreign or "")
+    if not pattern:
+        return []
+    found: list[str] = []
+    for match in pattern.finditer(text or ""):
+        # Отрицание может стоять и до упоминания («не применяя ГПК»), и
+        # после него («нормы ГПК РФ ... не применяются»), поэтому окно
+        # берётся с двух сторон.
+        window = (
+            text[max(0, match.start() - 80) : match.end() + 80] or ""
+        )
+        if _NEGATED_CODE.search(window):
+            continue
+        found.append(match.group(0))
+    return found
+
+
 def verify_draft(
     draft: DraftResult, pack: EvidencePack, settings: Settings | None = None
 ) -> VerificationReport:
@@ -667,6 +710,34 @@ def verify_draft(
                 reason=qual_finding.reason,
             )
         )
+
+    # Вид судопроизводства и кодекс в проекте должны совпадать.
+    # Генератор теперь выбирает шаблон по материалам, но текст модели
+    # всё равно может сослаться на чужой процессуальный кодекс. На живом
+    # тесте 21 из 26 проектов применял ГПК РФ к арбитражным делам — это
+    # ошибка, которую судья обязан увидеть до чтения проекта.
+    if pack.jurisdiction in _FOREIGN_CODE:
+        draft_text = "\n".join(section.text for section in draft.sections)
+        foreign = _foreign_codec_mentions(draft_text, pack.jurisdiction)
+        if foreign:
+            owner = (
+                "арбитражного"
+                if pack.jurisdiction == "arbitration"
+                else "гражданского"
+            )
+            report.issues.append(
+                Issue(
+                    type=IssueType.JURISDICTION_MISMATCH,
+                    severity=Severity.HIGH,
+                    text=foreign[0],
+                    reason=(
+                        f"дело {owner} судопроизводства, а в проекте "
+                        f"применён {_FOREIGN_CODE[pack.jurisdiction]}: "
+                        "проверьте вид производства и нормы; для этого "
+                        "дела шаблон проекта другой"
+                    ),
+                )
+            )
 
     # ── 4d. Реквизиты карточки против материалов дела ─────────────
     # Карточку заводят руками, документы — то, что лежит в деле. На

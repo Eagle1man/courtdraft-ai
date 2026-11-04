@@ -252,6 +252,27 @@ class TestDraftGeneration:
         assert report.sections_checked == 2
         assert pack.items
 
+    async def test_template_follows_case_type(self, session: AsyncSession, prepared_case: uuid.UUID, monkeypatch) -> None:  # noqa: ANN001
+        """Арбитражное дело получает арбитражный шаблон, а не гражданский.
+
+        Раньше шаблон был жёстко `civil_judgment`, и проект по
+        арбитражному делу применял ГПК РФ (21 случай из 26 на тесте).
+        """
+        from app.services import draft_service as module
+
+        monkeypatch.setattr(module, "generate_draft", _fake_generate(prepared_case))
+        service = DraftService(session)
+
+        case = await service.cases.get(prepared_case)
+        assert case is not None
+        case.case_type = "arbitration"
+        await session.flush()
+
+        draft, _version, _report, pack = await service.generate(prepared_case)
+
+        assert draft.template_name == "arbitration_judgment"
+        assert pack.jurisdiction == "arbitration"
+
     async def test_evidence_saved_alongside_draft(self, session: AsyncSession, prepared_case: uuid.UUID, monkeypatch) -> None:  # noqa: ANN001
         """Пакет сохраняется вместе с проектом, а не после него.
 

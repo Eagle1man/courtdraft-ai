@@ -120,10 +120,12 @@ class DraftListOut(BaseModel):
 class DraftGenerateIn(BaseModel):
     """Запрос на формирование проекта."""
 
-    template_name: str = Field(
-        default="civil_judgment",
+    #: Шаблон можно задать явно (демо, эксперименты). Пусто — выбирается
+    #: по виду судопроизводства дела: арбитраж → АПК, иначе ГПК.
+    template_name: str | None = Field(
+        default=None,
         max_length=100,
-        examples=["civil_judgment", "world_judgment"],
+        examples=[None, "civil_judgment", "arbitration_judgment"],
     )
     # Кто инициировал: попадает в аудит и в автора версии.
     actor: str = Field(default="judge", max_length=60)

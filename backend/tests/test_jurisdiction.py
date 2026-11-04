@@ -1,115 +1,116 @@
-"""Проверка родовой подсудности (п. 4 и п. 5 ч. 1 ст. 23 ГПК РФ)."""
+"""Вид судопроизводства: определение по материалам, шаблон и проверка."""
 
-from app.verification.jurisdiction import (
-    CONSUMER_LIMIT,
-    WORLD_LIMIT,
-    check_jurisdiction,
-    expected_tier,
+from __future__ import annotations
+
+from app.agents.draft_agent import DraftResult, SectionDraft
+from app.agents.evidence_pack import EvidencePack, template_name_for_case
+from app.ingestion.jurisdiction import (
+    ARBITRATION,
+    CIVIL,
+    detect_jurisdiction,
 )
+from app.verification.engine import IssueType, verify_draft
 
 
-class TestExpectedTier:
-    """Общий порог 50 000 руб., потребительский — 100 000 руб."""
+class TestDetect:
+    def test_arbitration_by_court_header(self) -> None:
+        verdict = detect_jurisdiction([
+            "В Арбитражный суд города Москвы\nИстец: ООО «Ромашка»"
+        ])
+        assert verdict.case_type == ARBITRATION
+        assert verdict.confidence in {"medium", "high"}
+        assert verdict.reasons
 
-    def test_small_claim_world_judge(self) -> None:
-        assert expected_tier(50_000) == "мировой судья"
+    def test_arbitration_by_case_number(self) -> None:
+        verdict = detect_jurisdiction(["Дело № А40-12345/2026"])
+        assert verdict.case_type == ARBITRATION
 
-    def test_over_limit_district(self) -> None:
-        assert expected_tier(50_001) == "районный суд"
+    def test_arbitration_by_apk_reference(self) -> None:
+        verdict = detect_jurisdiction([
+            "Иск подан в порядке ст. 125 АПК РФ. Ответчик: ООО «Вектор»."
+        ])
+        assert verdict.case_type == ARBITRATION
 
-    def test_zero_no_tier(self) -> None:
-        assert expected_tier(0) == "районный суд"
+    def test_civil_by_district_court(self) -> None:
+        verdict = detect_jurisdiction([
+            "Пресненский районный суд г. Москвы\nИстец: Образцов Пётр Петрович"
+        ])
+        assert verdict.case_type == CIVIL
 
-    def test_limits_follow_the_article(self) -> None:
-        # П. 4 ч. 1 ст. 23 ГПК РФ — 50 000 руб., п. 5 — 100 000 руб.
-        # по спорам о защите прав потребителей.
-        assert WORLD_LIMIT == 50_000
-        assert CONSUMER_LIMIT == 100_000
+    def test_world_judge_is_civil(self) -> None:
+        verdict = detect_jurisdiction([
+            "Мировой судья судебного участка № 123 рассматривает дело"
+        ])
+        assert verdict.case_type == CIVIL
 
-    def test_consumer_threshold(self) -> None:
-        assert expected_tier(80_000, consumer=True) == "мировой судья"
-        assert expected_tier(100_001, consumer=True) == "районный суд"
+    def test_gpk_reference_is_civil(self) -> None:
+        verdict = detect_jurisdiction(["Иск подан по правилам ст. 131 ГПК РФ"])
+        assert verdict.case_type == CIVIL
 
+    def test_empty_when_no_signs(self) -> None:
+        verdict = detect_jurisdiction(["Договор поставки № 7 от 01.02.2025"])
+        assert verdict.case_type == ""
+        assert not verdict.detected
 
-class TestCheckJurisdiction:
-    """Расхождение видно, совпадение молчит, отсутствие тоже молчит."""
+    def test_contradicting_signs_do_not_decide(self) -> None:
+        # По одному сильному признаку с каждой стороны: угадывать нельзя.
+        verdict = detect_jurisdiction([
+            "Арбитражный суд рассмотрел спор",
+            "Решение вынесено по нормам ГПК РФ",
+        ])
+        assert verdict.case_type == ""
 
-    def test_mismatch_world_judge_over_limit(self) -> None:
-        findings = check_jurisdiction(
-            ["Иск подан мировому судье судебного участка № 12"],
-            claim_total=150_000,
+    def test_both_sides_business_tips_arbitration(self) -> None:
+        verdict = detect_jurisdiction(
+            ["Спор из договора поставки, ИНН 7701234567"],
+            plaintiff="ООО «Ромашка»",
+            defendant="ООО «Вектор»",
         )
-        assert len(findings) == 1
-        assert findings[0].expected == "районный суд"
-        assert "мировой" in findings[0].found
-        assert "п. 4 ч. 1 ст. 23" in findings[0].reason
+        assert verdict.case_type == ARBITRATION
 
-    def test_mismatch_district_small_claim(self) -> None:
-        findings = check_jurisdiction(
-            ["Дело рассматривается районным судом"], claim_total=50_000
-        )
-        assert len(findings) == 1
-        assert findings[0].expected == "мировой судья"
+    def test_empty_texts(self) -> None:
+        assert detect_jurisdiction([]).case_type == ""
+        assert detect_jurisdiction(["", None]).case_type == ""  # type: ignore[list-item]
 
-    def test_world_judge_over_general_limit_is_flagged(self) -> None:
-        # Старая ошибка: порогом служил п. 5 (потребительский, 100 000),
-        # и иск на 89 000 руб. у мирового судьи проходил молча.
-        findings = check_jurisdiction(
-            ["Мировой судья судебного участка № 123"], claim_total=89_122.19
-        )
-        assert len(findings) == 1
-        assert findings[0].expected == "районный суд"
 
-    def test_consumer_case_silent_under_consumer_limit(self) -> None:
-        # Потребительский порог включается только по явному признаку.
-        assert not check_jurisdiction(
-            [
-                "Иск о защите прав потребителей, "
-                "подан мировому судье судебного участка № 4"
-            ],
-            claim_total=80_000,
-        )
+class TestTemplateChoice:
+    def test_arbitration_uses_arbitration_template(self) -> None:
+        assert template_name_for_case("arbitration") == "arbitration_judgment"
 
-    def test_consumer_case_flagged_over_consumer_limit(self) -> None:
-        findings = check_jurisdiction(
-            [
-                "Иск о защите прав потребителей, "
-                "подан мировому судье судебного участка № 4"
-            ],
-            claim_total=150_000,
-        )
-        assert len(findings) == 1
-        assert findings[0].expected == "районный суд"
-        assert "п. 5 ч. 1 ст. 23" in findings[0].reason
+    def test_civil_uses_civil_template(self) -> None:
+        assert template_name_for_case("civil") == "civil_judgment"
 
-    def test_match_is_silent(self) -> None:
-        assert not check_jurisdiction(
-            ["Мировой судья судебного участка № 3"], claim_total=40_000
-        )
+    def test_unknown_falls_back_to_civil(self) -> None:
+        assert template_name_for_case("") == "civil_judgment"
+        assert template_name_for_case("что-то") == "civil_judgment"
 
-    def test_no_court_mention_is_silent(self) -> None:
-        # Суд не назван в материалах — замечания нет: признака нет,
-        # выдумывать инстанцию система не умеет.
-        assert not check_jurisdiction(
-            ["Истец просит взыскать долг по договору"], claim_total=150_000
-        )
 
-    def test_no_claims_is_silent(self) -> None:
-        # Цена иска неизвестна — сверять нечего.
-        assert not check_jurisdiction(
-            ["Районный суд"], claim_total=0
-        )
+def _draft(text: str) -> DraftResult:
+    return DraftResult(
+        case_number="А40-1/2026",
+        sections=[SectionDraft(key="motivating", name="Мотивировочная", text=text)],
+    )
 
-    def test_court_found_in_any_document(self) -> None:
-        # Суд может быть назван не в первом документе дела.
-        findings = check_jurisdiction(
-            ["Прошу взыскать долг", "определение мирового судьи"],
-            claim_total=200_000,
-        )
-        assert len(findings) == 1
 
-    def test_match_in_later_document(self) -> None:
-        assert not check_jurisdiction(
-            ["Прошу взыскать долг", "решение районного суда"],
-            claim_total=200_000,
+class TestCodecMismatch:
+    def test_arbitration_case_with_gpk_is_flagged(self) -> None:
+        pack = EvidencePack(case_number="А40-1/2026", jurisdiction="arbitration")
+        report = verify_draft(_draft("Суд применяет ст. 198 ГПК РФ."), pack)
+        assert any(i.type == IssueType.JURISDICTION_MISMATCH for i in report.issues)
+
+    def test_civil_case_with_apk_is_flagged(self) -> None:
+        pack = EvidencePack(case_number="2-1/2026", jurisdiction="civil")
+        report = verify_draft(_draft("Суд применяет ст. 168 АПК РФ."), pack)
+        assert any(i.type == IssueType.JURISDICTION_MISMATCH for i in report.issues)
+
+    def test_negated_mentions_are_not_flagged(self) -> None:
+        pack = EvidencePack(case_number="А40-1/2026", jurisdiction="arbitration")
+        report = verify_draft(
+            _draft("Нормы ГПК РФ к арбитражному делу не применяются."), pack
         )
+        assert not any(i.type == IssueType.JURISDICTION_MISMATCH for i in report.issues)
+
+    def test_unknown_jurisdiction_is_not_checked(self) -> None:
+        pack = EvidencePack(case_number="1/2026", jurisdiction="")
+        report = verify_draft(_draft("Суд применяет ст. 198 ГПК РФ."), pack)
+        assert not any(i.type == IssueType.JURISDICTION_MISMATCH for i in report.issues)

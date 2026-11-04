@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.ingestion.case_card import extract_case_card
+from app.ingestion.jurisdiction import detect_jurisdiction
 from app.models.entities import Case, CaseDocument, CaseStatus, DocumentType, Participant
 from app.schemas.case import (
     CaseCreate,
@@ -143,14 +144,20 @@ def _ensure_case_visible(case: Case | None) -> Case:
 async def _refresh_case_card(
     service: CaseService, case: Case, session: AsyncSession
 ) -> None:
-    """Подставить номер и суд из материалов дела.
+    """Подставить номер, суд и вид судопроизводства из материалов дела.
 
     Карточку больше не заполняют руками: в ней оказывалось что угодно
     (фамилия, «уц»), и проект расходился с карточкой. Материалы — источник
     этих реквизитов, поэтому после каждой загрузки они переносятся в дело.
+
+    Вид судопроизводства определяется по тем же материалам: шапка
+    «Арбитражный суд», номер «А40-…», ссылки на АПК РФ. Если признаков
+    нет или они противоречат друг другу, прежнее значение не трогается.
     """
     documents = await service.documents.list_for_case(case.id)
-    number, court = extract_case_card(document.text for document in documents)
+    texts = [document.text or "" for document in documents]
+    number, court = extract_case_card(texts)
+    verdict = detect_jurisdiction(texts)
 
     changed: list[str] = []
     if number and number != case.case_number:
@@ -159,6 +166,9 @@ async def _refresh_case_card(
     if court and court != case.court_name:
         case.court_name = court
         changed.append("court")
+    if verdict.detected and verdict.case_type != case.case_type:
+        case.case_type = verdict.case_type
+        changed.append("case_type")
     if not changed:
         return
 
@@ -169,6 +179,9 @@ async def _refresh_case_card(
         actor="ingest",
         case_number=case.case_number,
         court_name=case.court_name,
+        case_type=case.case_type,
+        jurisdiction_confidence=verdict.confidence,
+        jurisdiction_reasons=list(verdict.reasons),
         fields=changed,
     )
 
