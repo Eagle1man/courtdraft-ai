@@ -668,3 +668,42 @@ class Feedback(TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<Feedback {self.rating}/5 {self.verdict} role={self.author_role}>"
+
+
+# ── Job (фоновая генерация) ───────────────────────────────────────────────
+
+
+class JobRecord(TimestampMixin, Base):
+    """Состояние фоновой задачи в базе, а не в памяти процесса.
+
+    Зачем: реестр задач жил только в памяти, и перезапуск службы терял
+    незавершённые задания — за живой тест так пропало около 34 заданий,
+    а интерфейс продолжал опрашивать несуществующий job_id. Запись в
+    базе переживает перезапуск: после старта задача честно помечается
+    прерванной, и клиент видит причину, а не вечное «в очереди».
+    """
+
+    __tablename__ = "jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    state: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="PENDING", index=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error: Mapped[str] = mapped_column(String(400), default="", nullable=False)
+    result_draft_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    result_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    verification_status: Mapped[str] = mapped_column(
+        String(30), default="", nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<JobRecord {self.id} {self.state} case={self.case_id}>"

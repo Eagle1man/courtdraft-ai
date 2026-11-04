@@ -11,9 +11,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entities import (
@@ -27,6 +28,7 @@ from app.models.entities import (
     DraftVersion,
     EvidenceItem,
     Feedback,
+    JobRecord,
     Verification,
 )
 
@@ -539,3 +541,61 @@ def new_case(case_number: str, court_name: str, case_type: str, **extra: Any) ->
     }
     values.update(extra)
     return values
+
+
+class JobRepository:
+    """Задания формирования проекта: состояние в базе.
+
+    Реестр в памяти (`app.services.jobs`) остаётся быстрым кэшем, но
+    источник истины — эта таблица. После перезапуска службы незавершённые
+    задания помечаются прерванными, а не висят «в очереди» вечно.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        *,
+        job_id: uuid.UUID,
+        case_id: uuid.UUID,
+        state: str,
+        created_at: datetime | None = None,
+    ) -> JobRecord:
+        record = JobRecord(id=job_id, case_id=case_id, state=state)
+        if created_at is not None:
+            record.created_at = created_at
+        self._session.add(record)
+        await self._session.flush()
+        return record
+
+    async def update(self, job_id: uuid.UUID, **fields: Any) -> None:
+        if not fields:
+            return
+        await self._session.execute(
+            update(JobRecord).where(JobRecord.id == job_id).values(**fields)
+        )
+
+    async def get(self, job_id: uuid.UUID) -> JobRecord | None:
+        return await self._session.get(JobRecord, job_id)
+
+    async def mark_interrupted(self) -> int:
+        """Пометить незавершённые задания прерванными при старте службы.
+
+        Задание, которое было в работе, после остановки процесса уже не
+        завершится, а ожидавшее в очереди — никогда не начнётся: очередь
+        жила в памяти. Честнее сказать это сразу.
+        """
+        result = await self._session.execute(
+            update(JobRecord)
+            .where(JobRecord.state.in_(("PENDING", "RUNNING")))
+            .values(
+                state="FAILED",
+                finished_at=datetime.now(UTC),
+                error=(
+                    "служба была перезапущена — задание прервано; "
+                    "запустите формирование проекта заново"
+                ),
+            )
+        )
+        return int(result.rowcount or 0)

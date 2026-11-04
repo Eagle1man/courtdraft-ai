@@ -520,7 +520,7 @@ class TestDraftEndpoints:
     async def test_unknown_job_is_404(self, api_client: AsyncClient) -> None:
         response = await api_client.get(f"/api/jobs/{uuid.uuid4()}")
         assert response.status_code == 404
-        assert "перезапуск" in response.json()["detail"].lower()
+        assert "не найдена" in response.json()["detail"].lower()
 
     async def test_missing_case_is_404(self, api_client: AsyncClient) -> None:
         response = await api_client.post(
@@ -1248,3 +1248,72 @@ class TestInjectionWarning:
         )
         assert response.status_code == 201, response.text
         assert response.json()["injection_warning"] is False
+
+
+# ── Задания в базе: переживают перезапуск службы ──────────────────────
+
+
+class TestJobPersistence:
+    """Состояние задания хранится в базе, а не только в памяти."""
+
+    async def test_interrupted_jobs_marked_on_restart(
+        self, session: AsyncSession, case_factory
+    ) -> None:  # noqa: ANN001
+        """После перезапуска незавершённое задание честно прервано.
+
+        Очередь жила в памяти: при остановке процесса задание не
+        продолжается, а клиент опрашивал его вечно.
+        """
+        from app.db.repositories import JobRepository
+
+        case = await case_factory("JOB-001")
+        repo = JobRepository(session)
+        job_id = uuid.uuid4()
+        await repo.create(job_id=job_id, case_id=case.id, state="RUNNING")
+        await session.flush()
+
+        interrupted = await repo.mark_interrupted()
+        assert interrupted >= 1
+
+        record = await repo.get(job_id)
+        assert record is not None
+        assert record.state == "FAILED"
+        assert "перезапущена" in record.error
+
+    async def test_done_jobs_are_not_marked(self, session: AsyncSession, case_factory) -> None:  # noqa: ANN001
+        from app.db.repositories import JobRepository
+
+        case = await case_factory("JOB-002")
+        repo = JobRepository(session)
+        job_id = uuid.uuid4()
+        await repo.create(job_id=job_id, case_id=case.id, state="DONE")
+        await session.flush()
+
+        await repo.mark_interrupted()
+
+        record = await repo.get(job_id)
+        assert record is not None
+        assert record.state == "DONE"
+
+    async def test_job_survives_registry_loss(self, api_client: AsyncClient) -> None:
+        """GET /api/jobs работает и когда реестр в памяти пуст.
+
+        Имитация перезапуска службы: задание создано, реестр очищен,
+        состояние читается из базы.
+        """
+        from app.services.jobs import jobs
+
+        case_id = await _make_case_with_documents(api_client)
+        response = await api_client.post(
+            f"/api/cases/{case_id}/draft", json={"actor": "judge"}
+        )
+        assert response.status_code == 202, response.text
+        job_id = response.json()["job_id"]
+
+        jobs._jobs.clear()  # noqa: SLF001 - имитация перезапуска
+        jobs._order.clear()  # noqa: SLF001
+
+        got = await api_client.get(f"/api/jobs/{job_id}")
+        assert got.status_code == 200, got.text
+        assert got.json()["job_id"] == job_id
+        assert got.json()["state"] in ("PENDING", "RUNNING", "DONE", "FAILED")

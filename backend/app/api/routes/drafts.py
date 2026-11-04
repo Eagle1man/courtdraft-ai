@@ -30,6 +30,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.db.repositories import JobRepository
 from app.model_routing import ModelRouter
 from app.models.entities import Draft, DraftVersion, EvidenceItem
 from app.schemas.draft import (
@@ -228,6 +229,22 @@ def _draft_out(
 # ── Фоновая задача ────────────────────────────────────────────────────
 
 
+async def _persist_job_state(job_id: uuid.UUID, **fields: object) -> None:
+    """Сохранить состояние задания в базе, не ломая генерацию.
+
+    Реестр в памяти — источник быстрых ответов, база — то, что переживает
+    перезапуск. Сбой записи не должен ронять саму генерацию: проект уже
+    сформирован, а состояние можно перечитать.
+    """
+    if not db.available:
+        return
+    try:
+        async with session_scope(db.factory) as session:
+            await JobRepository(session).update(job_id, **fields)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Не удалось сохранить состояние задания %s: %s", job_id, exc)
+
+
 async def _run_generation(
     job_id: uuid.UUID,
     case_id: uuid.UUID,
@@ -250,6 +267,9 @@ async def _run_generation(
     # остаётся PENDING, и интерфейс показывает ожидание, а не работу.
     async with _GENERATION_SLOTS:
         await jobs.update(job_id, state=JobState.RUNNING, started_at=_now())
+        await _persist_job_state(
+            job_id, state=JobState.RUNNING.value, started_at=_now()
+        )
 
         try:
             from app.llm import build_llm_provider
@@ -273,6 +293,14 @@ async def _run_generation(
                 result_version=version_number,
                 verification_status=verification_status,
             )
+            await _persist_job_state(
+                job_id,
+                state=JobState.DONE.value,
+                finished_at=_now(),
+                result_draft_id=draft_id,
+                result_version=version_number,
+                verification_status=verification_status,
+            )
 
         except CaseNotReadyError as exc:
             # Нет материалов дела: это состояние данных, а не сбой системы.
@@ -283,13 +311,26 @@ async def _run_generation(
                 finished_at=_now(),
                 error=str(exc),
             )
+            await _persist_job_state(
+                job_id,
+                state=JobState.FAILED.value,
+                finished_at=_now(),
+                error=str(exc)[:400],
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Формирование проекта не удалось: %s", job_id)
+            message = f"{type(exc).__name__}: {exc}"[:400]
             await jobs.update(
                 job_id,
                 state=JobState.FAILED,
                 finished_at=_now(),
-                error=f"{type(exc).__name__}: {exc}"[:400],
+                error=message,
+            )
+            await _persist_job_state(
+                job_id,
+                state=JobState.FAILED.value,
+                finished_at=_now(),
+                error=message,
             )
 
 
@@ -339,6 +380,15 @@ async def generate_draft(
 
     if not wait:
         job = await jobs.create(case_id)
+        # Запись в базу до запуска фоновой задачи: иначе после
+        # перезапуска службы опрос job_id не найдёт ничего.
+        await JobRepository(session).create(
+            job_id=job.id,
+            case_id=case_id,
+            state=job.state.value,
+            created_at=job.created_at,
+        )
+        await session.commit()
         background.add_task(
             _run_generation, job.id, case_id, payload.actor, cfg, assignment.model
         )
@@ -375,22 +425,35 @@ async def generate_draft(
 
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: uuid.UUID) -> dict[str, object]:
+async def get_job(job_id: uuid.UUID, session: SessionDep) -> dict[str, object]:
     """GET /api/jobs/{id} — состояние фоновой задачи.
 
     Отдельный эндпоинт, а не поле в ответе на создание: клиент опрашивает
-    его, пока задача не завершится.
+    его, пока задача не завершится. Если реестр в памяти пуст (служба
+    перезапускалась), состояние читается из базы — там задача остаётся.
     """
     job = await jobs.get(job_id)
-    if job is None:
+    if job is not None:
+        return job.to_dict()
+
+    record = await JobRepository(session).get(job_id)
+    if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                "Задача не найдена. Задачи хранятся в памяти процесса и "
-                "теряются при перезапуске сервера."
-            ),
+            detail="Задача не найдена: такого задания нет ни в памяти, ни в базе.",
         )
-    return job.to_dict()
+    return {
+        "job_id": str(record.id),
+        "case_id": str(record.case_id),
+        "state": record.state,
+        "created_at": record.created_at.isoformat(),
+        "started_at": record.started_at.isoformat() if record.started_at else None,
+        "finished_at": record.finished_at.isoformat() if record.finished_at else None,
+        "error": record.error,
+        "draft_id": str(record.result_draft_id) if record.result_draft_id else None,
+        "version": record.result_version,
+        "verification": record.verification_status,
+    }
 
 
 @router.get("/cases/{case_id}/draft", response_model=DraftOut | None)

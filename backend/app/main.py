@@ -24,8 +24,9 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import cases, demo, drafts, feedback, system
 from app.config import Settings, get_settings
 from app.db.bootstrap import MIGRATE_HINT, check_schema_drift, ensure_schema
+from app.db.repositories import JobRepository
 from app.db.session import describe_url
-from app.services.case_service import db
+from app.services.case_service import db, session_scope
 from app.services.health_service import DISCLAIMER, VERSION
 
 logging.basicConfig(
@@ -83,6 +84,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ", ".join(missing),
                     MIGRATE_HINT,
                 )
+
+            # Очередь заданий жила в памяти: после остановки процесса
+            # незавершённые задания не продолжатся. Помечаем их
+            # прерванными, чтобы клиент видел причину, а не вечное
+            # «в очереди». Это факт, а не догадка.
+            try:
+                async with session_scope(db.factory) as session:
+                    interrupted = await JobRepository(session).mark_interrupted()
+                if interrupted:
+                    logger.warning(
+                        "Прервано заданий после перезапуска: %d", interrupted
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Не удалось пометить прерванные задания: %s", exc)
         else:
             logger.warning(
                 "БД недоступна. Система работает без эндпоинтов дел. "
