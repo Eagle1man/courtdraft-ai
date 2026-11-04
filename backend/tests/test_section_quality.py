@@ -19,7 +19,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.drafting.section_quality import not_formed_text, unusable_reason
+from app.drafting.section_quality import (
+    motivating_shortcoming,
+    not_formed_text,
+    unusable_reason,
+)
 
 REASONING = (
     "Okay, let's tackle this. The user wants the \"описательная часть\" of "
@@ -159,3 +163,35 @@ class TestRussianChatterRejected:
     )
     def test_legal_text_is_not_chatter(self, text: str) -> None:
         assert unusable_reason(text) == ""
+
+
+class TestMotivatingCompleteness:
+    """Мотивировочная часть без обоснования — неполный проект."""
+
+    def test_short_motivation_is_flagged(self) -> None:
+        assert motivating_shortcoming("Суд считает иск подлежащим удовлетворению.")
+
+    def test_empty_motivation_is_flagged(self) -> None:
+        assert motivating_shortcoming("")
+
+    def test_long_text_without_law_is_flagged(self) -> None:
+        text = (
+            "Суд рассмотрел обстоятельства дела и пришёл к выводу, что "
+            "требования истца подтверждаются материалами. Ответчик не "
+            "представил доказательств, опровергающих доводы истца. "
+            "Договор был заключён, деньги переданы, возврат не произведён. "
+        ) * 4
+        assert "нет ссылок на нормы" in motivating_shortcoming(text)
+
+    def test_reasoned_motivation_passes(self) -> None:
+        text = (
+            "Разрешая спор, суд руководствуется ст. 309, 310 ГК РФ: "
+            "обязательства должны исполняться надлежащим образом. "
+            "Довод ответчика о передаче денег без письменных доказательств "
+            "отклоняется: в силу ст. 56, 60 ГПК РФ и ст. 162 ГК РФ "
+            "несоблюдение простой письменной формы лишает стороны права "
+            "ссылаться на свидетельские показания, а письменных "
+            "доказательств не представлено. Поэтому требование о взыскании "
+            "задолженности подлежит удовлетворению в полном размере. "
+        ) * 2
+        assert motivating_shortcoming(text) == ""

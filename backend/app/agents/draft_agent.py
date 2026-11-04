@@ -26,7 +26,7 @@ from app.agents.evidence_pack import EvidencePack
 from app.config import Settings, get_settings
 from app.drafting.date_guard import mark_unsourced_dates
 from app.drafting.numeric_guard import mark_unsourced_amounts
-from app.drafting.section_quality import unusable_reason
+from app.drafting.section_quality import motivating_shortcoming, unusable_reason
 from app.llm import build_llm_provider
 from app.llm.base import LLMMessage, LLMProvider, LLMRequest, LLMRole
 from app.model_routing.cache import get_response_cache
@@ -1268,6 +1268,14 @@ async def generate_draft(
                     gaps.append(
                         f"дата {item.raw} не найдена в материалах дела"
                     )
+                # Мотивировочная часть проверяется отдельно: на тесте
+                # 9 из 26 проектов пришли без правового обоснования, и
+                # по длине раздела это было незаметно.
+                if section["key"] == "motivating":
+                    problem = motivating_shortcoming(marked)
+                    if problem:
+                        gaps.append(problem)
+                        needs_review = True
                 # Сумма может быть в деле, но относиться к другому
                 # требованию («проценты 80 000» вместо «долг 80 000»).
                 # Проверка «число встречается» такое пропускает, поэтому

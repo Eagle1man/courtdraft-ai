@@ -29,6 +29,7 @@ from app.agents.evidence_pack import MONTHS, EvidenceItem, EvidencePack
 from app.config import Settings
 from app.drafting.operative import DEFAULT_LEGAL_BASIS
 from app.drafting.requirements import extract_requirements
+from app.drafting.section_quality import motivating_shortcoming
 from app.verification.evidence_assessment import (
     AssessmentCriterion,
     assessment_of,
@@ -846,6 +847,24 @@ def verify_draft(
                 )
             )
             continue
+
+        # ── Мотивировочная часть без правового обоснования ────────
+        # На живом тесте 9 из 26 проектов пришли с одной-двумя общими
+        # фразами вместо оценки доводов. По счётчикам это выглядело
+        # нормально: раздел есть, ошибок в нём нет. Отдавать такой проект
+        # как готовый нельзя — это отсутствие обоснования решения.
+        if section.key == "motivating":
+            problem = motivating_shortcoming(text)
+            if problem:
+                report.issues.append(
+                    Issue(
+                        type=IssueType.INCOMPLETE,
+                        severity=Severity.HIGH,
+                        text=text[:200],
+                        reason=problem,
+                        section=section.name,
+                    )
+                )
 
         # Номера статей из ссылок на нормы — не суммы. Без этого любая
         # корректная ссылка «статья 310 ГК РФ» помечалась бы как
