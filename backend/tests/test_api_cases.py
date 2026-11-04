@@ -67,6 +67,60 @@ class TestCreateCase:
         assert data["status"] == "NEW"
         assert data["is_synthetic"] is True
 
+    async def test_repeated_create_reuses_empty_case(self, client: AsyncClient) -> None:
+        """Повторное «Создать» возвращает то же пустое дело.
+
+        На живом тесте студенты нажимали кнопку несколько раз подряд и
+        оставляли до четырёх пустых дел: список забивался, а материалов
+        в них не было.
+        """
+        payload = _payload(
+            case_number="б/н 04.11.2026 10:00:00",
+            student_code="S01",
+            is_synthetic=False,
+        )
+        first = await client.post("/api/cases", json=payload)
+        assert first.status_code == 201, first.text
+
+        payload["case_number"] = "б/н 04.11.2026 10:00:05"
+        second = await client.post("/api/cases", json=payload)
+        assert second.status_code == 201, second.text
+
+        assert first.json()["id"] == second.json()["id"]
+
+        listed = await client.get(
+            "/api/cases", params={"student_code": "S01"}
+        )
+        assert listed.json()["total"] == 1
+
+    async def test_different_codes_get_different_cases(
+        self, client: AsyncClient
+    ) -> None:
+        first = await client.post(
+            "/api/cases",
+            json=_payload(
+                case_number="б/н 04.11.2026 10:00:00",
+                student_code="S01",
+                is_synthetic=False,
+            ),
+        )
+        second = await client.post(
+            "/api/cases",
+            json=_payload(
+                case_number="б/н 04.11.2026 10:00:01",
+                student_code="S02",
+                is_synthetic=False,
+            ),
+        )
+        assert first.json()["id"] != second.json()["id"]
+
+    async def test_demo_case_is_not_reused(self, client: AsyncClient) -> None:
+        payload = _payload(case_number="DEMO-001", student_code="S01")
+        first = await client.post("/api/cases", json=payload)
+        payload["case_number"] = "DEMO-002"
+        second = await client.post("/api/cases", json=payload)
+        assert first.json()["id"] != second.json()["id"]
+
     async def test_duplicate_number_returns_409(self, client: AsyncClient) -> None:
         await client.post("/api/cases", json=_payload())
         response = await client.post("/api/cases", json=_payload())

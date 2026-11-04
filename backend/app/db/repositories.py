@@ -52,6 +52,29 @@ class CaseRepository:
         )
         return result.scalar_one_or_none()
 
+    async def find_empty_case(self, student_code: str) -> Case | None:
+        """Пустое дело участника, к которому можно вернуться.
+
+        Нужно, чтобы повторное нажатие «Создать дело» не плодило
+        пустышки: на живом тесте у одного участника их оказывалось до
+        четырёх подряд. Возвращается самое свежее дело без документов и
+        без проекта.
+        """
+        if not student_code.strip():
+            return None
+        stmt = (
+            select(Case)
+            .where(
+                Case.is_archived.is_(False),
+                Case.is_synthetic.is_(False),
+                Case.student_code == student_code,
+                ~Case.documents.any(),
+            )
+            .order_by(Case.created_at.desc())
+            .limit(1)
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
     async def list(
         self,
         *,

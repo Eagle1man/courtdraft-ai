@@ -590,7 +590,12 @@ async function createCase() {
     }),
   });
 
-  showAlert("Дело создано. Добавьте материалы — номер и суд подставятся сами.", true);
+  showAlert(
+    state.cases.some((item) => item.id === created.id)
+      ? "Возвращено ваше незаполненное дело. Добавьте материалы — номер и суд подставятся сами."
+      : "Дело создано. Добавьте материалы — номер и суд подставятся сами.",
+    true,
+  );
   await loadCases();
   await selectCase(created.id);
 }

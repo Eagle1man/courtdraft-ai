@@ -217,6 +217,22 @@ async def create_case(payload: CaseCreate, session: SessionDep) -> CaseOut:
         )
 
     service = CaseService(session)
+    # Повторное нажатие «Создать дело» не плодит пустышки: если у
+    # участника уже есть дело без материалов, возвращается оно. На живом
+    # тесте студенты создавали до четырёх пустых дел подряд, и список
+    # забивался делами, в которые ничего не загрузили.
+    if payload.student_code.strip() and not payload.is_synthetic:
+        reusable = await service.find_empty_case(payload.student_code)
+        if reusable is not None:
+            await service.audit.log(
+                "case.reused",
+                case_id=reusable.id,
+                actor="ui",
+                case_number=reusable.case_number,
+                student_code=payload.student_code,
+            )
+            return await _to_out(reusable, session)
+
     try:
         case = await service.create_case(
             payload.case_number,

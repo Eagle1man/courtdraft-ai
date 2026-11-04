@@ -94,6 +94,10 @@ class CaseService:
     async def get_case(self, case_id: uuid.UUID) -> Case | None:
         return await self.cases.get(case_id)
 
+    async def find_empty_case(self, student_code: str) -> Case | None:
+        """Пустое дело участника — для повторного нажатия «Создать»."""
+        return await self.cases.find_empty_case(student_code)
+
     async def list_cases(
         self,
         *,
