@@ -19,18 +19,24 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from app.extraction.deterministic import extract_amounts
 from app.extraction.schemas import (
+    AmountsPayload,
     CaseAmount,
     CaseClaim,
     CaseDate,
     CaseFact,
     CaseParticipant,
     CaseRegistry,
+    ClaimsPayload,
+    DatesPayload,
     ExtractionPayload,
     ExtractionStatus,
     FactStatus,
     MissingInformation,
+    ParticipantsPayload,
     SourceRef,
+    normalize_party,
     normalize_role,
     parse_date,
     parse_money,
@@ -108,6 +114,55 @@ def _context(chunks: Sequence[ChunkLike], *, max_chars: int) -> str:
         parts.append(block)
         used += len(block)
     return "\n\n".join(parts)
+
+
+#: Слова, по которым фрагмент считается относящимся к категории. Это не
+#: «умный поиск», а дешёвый отбор: без него в контекст попадают первые
+#: 6 000 знаков документа, а суммы и требования часто оказываются в конце.
+CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "participants": ("истец", "ответчик", "третье лицо", "представитель", "ооо", "ип "),
+    "amounts": ("руб", "взыскать", "цена иска", "пени", "процент", "госпошлин", "долг"),
+    "dates": ("дата", "срок", "договор", "20", "г."),
+    "claims": ("просит", "взыскать", "требовани", "обязать", "признать"),
+}
+
+
+def _context_for(
+    category: str,
+    chunks: Sequence[ChunkLike],
+    *,
+    max_chars: int,
+) -> str:
+    """Отобрать фрагменты под конкретную категорию.
+
+    Фрагменты с ключевыми словами идут первыми, остальные — как запас,
+    если бюджет не заполнен. Порядок внутри выдачи сохраняется: цитата
+    должна открываться в том месте документа, где она была.
+    """
+    keywords = CATEGORY_KEYWORDS.get(category, ())
+    scored: list[tuple[int, int, ChunkLike]] = []
+    for index, chunk in enumerate(chunks):
+        text = (chunk.text or "").lower()
+        score = sum(1 for word in keywords if word in text)
+        scored.append((-score, index, chunk))
+    scored.sort()
+
+    selected: list[ChunkLike] = []
+    used = 0
+    for _negative, _index, chunk in scored:
+        text = (chunk.text or "").strip()
+        if not text:
+            continue
+        if selected and used + len(text) > max_chars:
+            continue
+        selected.append(chunk)
+        used += len(text)
+        if used >= max_chars:
+            break
+
+    order = {id(chunk): index for index, chunk in enumerate(chunks)}
+    selected.sort(key=lambda item: order[id(item)])
+    return _context(selected, max_chars=max_chars)
 
 
 def _locate(quote: str, chunks: Sequence[ChunkLike], document_id: str) -> SourceRef | None:
@@ -235,6 +290,7 @@ def build_registry(
                 fact_id=_fact_id(),
                 fact_type=raw_fact.category or "other",
                 value=value,
+                party=normalize_party(raw_fact.party),
                 source=source,
                 status=status,
             )
@@ -259,16 +315,30 @@ async def extract_facts(
     document_id: str = "",
     max_chars: int = MAX_CONTEXT_CHARS,
     attempts: int = MAX_ATTEMPTS,
+    mode: str = "single",
 ) -> ExtractionRun:
-    """Извлечь факты из фрагментов документов. Без исключений наружу."""
+    """Извлечь факты из фрагментов документов. Без исключений наружу.
+
+    `mode="single"` — один вызов со всей схемой, `mode="categories"` —
+    отдельные вызовы по категориям (ТЗ §14.2). Разница измеряется, а не
+    выбирается на веру.
+    """
     context = _context(chunks, max_chars=max_chars)
-    errors: list[str] = []
     if not context.strip():
         return ExtractionRun(
             registry=CaseRegistry(status=ExtractionStatus.NEEDS_REVIEW),
             status=ExtractionStatus.NEEDS_REVIEW,
             attempts=0,
             errors=["нет текста для извлечения"],
+        )
+
+    if mode == "categories":
+        return await _extract_by_categories(
+            provider,
+            chunks,
+            max_chars=max_chars,
+            document_id=document_id,
+            attempts=attempts,
         )
 
     request = LLMRequest(
@@ -284,6 +354,7 @@ async def extract_facts(
         reasoning=False,
     )
 
+    errors: list[str] = []
     used = 0
     for attempt in range(1, max(1, attempts) + 1):
         used = attempt
@@ -318,4 +389,134 @@ async def extract_facts(
         status=ExtractionStatus.NEEDS_REVIEW,
         attempts=used,
         errors=errors,
+    )
+
+
+#: Инструкции по категориям. Каждая — узкая задача: маленькой модели проще
+#: заполнить короткую схему, чем всю сразу.
+CATEGORY_PROMPTS: dict[str, tuple[str, type]] = {
+    "participants": (
+        "Извлеки только участников дела: истца, ответчика, третьих лиц, "
+        "представителей.\n"
+        "Поля: role (истец/ответчик/третье лицо/представитель), name "
+        "(название организации или ФИО), inn (ИНН, если есть, иначе пусто), "
+        "quote (дословная фраза из текста).\n"
+        'Пример: {"participants": [{"role": "истец", "name": "ООО «Ромашка»", '
+        '"inn": "", "quote": "Истец ООО «Ромашка»"}]}',
+        ParticipantsPayload,
+    ),
+    "amounts": (
+        "Извлеки только денежные суммы: цена иска, основной долг, пени, "
+        "проценты, оплаты, остаток долга, судебные расходы.\n"
+        "Поля: kind (principal/penalty/interest/paid/debt/costs/total), "
+        "value (только число, как в документе, например \"1 000,00\"), "
+        "quote (дословная фраза, где эта сумма указана).\n"
+        'Пример: {"amounts": [{"kind": "principal", "value": "1 000,00", '
+        '"quote": "задолженность в размере 1 000,00 руб."}]}',
+        AmountsPayload,
+    ),
+    "dates": (
+        "Извлеки только даты: договор, срок исполнения, события, платежи, "
+        "дата обращения в суд.\n"
+        "Поля: kind (contract/due/event/payment/filing), value (дата как в "
+        "документе, например \"15.01.2025\"), quote (дословная фраза).\n"
+        'Пример: {"dates": [{"kind": "contract", "value": "15.01.2025", '
+        '"quote": "договор поставки от 15.01.2025"}]}',
+        DatesPayload,
+    ),
+    "claims": (
+        "Извлеки только требования истца: что просит, на какую сумму, на "
+        "каком основании.\n"
+        "Поля: subject (что просит), amount (сумма или пусто), quote "
+        "(дословная фраза).\n"
+        'Пример: {"claims": [{"subject": "взыскать задолженность", '
+        '"amount": "1 000,00", "quote": "просит взыскать 1 000,00 руб."}]}',
+        ClaimsPayload,
+    ),
+}
+
+
+async def _extract_by_categories(
+    provider: JsonProvider,
+    chunks: Sequence[ChunkLike],
+    *,
+    max_chars: int,
+    document_id: str,
+    attempts: int,
+) -> ExtractionRun:
+    """По одному вызову на категорию, затем сборка общего реестра."""
+    merged: dict[str, list] = {
+        "participants": [],
+        "amounts": [],
+        "dates": [],
+        "claims": [],
+    }
+    errors: list[str] = []
+    calls = 0
+
+    for category, (instructions, schema) in CATEGORY_PROMPTS.items():
+        context = _context_for(category, chunks, max_chars=max_chars)
+
+        # Суммы ищет Python: модель на реальных исках возвращает пустой
+        # список, хотя числа в тексте есть. Это ровно тот случай, когда
+        # детерминированный код надёжнее языковой модели (§8.1).
+        if category == "amounts":
+            combined = "\n\n".join((chunk.text or "") for chunk in chunks)
+            found = extract_amounts(combined, document_id=document_id)
+            if found:
+                merged["amounts"].extend(
+                    {
+                        "kind": item.kind,
+                        "value": str(item.value),
+                        "quote": item.source.quote if item.source else "",
+                    }
+                    for item in found
+                )
+                continue
+
+        answer: dict = {}
+        for attempt in range(1, max(1, attempts) + 1):
+            calls += 1
+            request = LLMRequest(
+                messages=[
+                    LLMMessage(role="system", content=instructions),
+                    LLMMessage(role="user", content=f"Материалы дела:\n\n{context}"),
+                ],
+                role=LLMRole.EXTRACTION,
+                temperature=0.0,
+                max_tokens=900,
+                json_mode=True,
+                json_schema=schema.model_json_schema(),
+                reasoning=False,
+            )
+            try:
+                raw = await provider.generate_json(request, default={})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{category}, попытка {attempt}: {exc}")
+                continue
+            if not raw:
+                errors.append(f"{category}, попытка {attempt}: пустой ответ")
+                continue
+            try:
+                parsed = schema.model_validate(raw)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{category}, попытка {attempt}: схема: {exc}")
+                continue
+            answer = parsed.model_dump()
+            break
+
+        for key in merged:
+            merged[key].extend(answer.get(key) or [])
+
+    payload = ExtractionPayload.model_validate(merged)
+    registry = build_registry(payload, chunks, document_id=document_id)
+    if errors:
+        registry.status = ExtractionStatus.NEEDS_REVIEW
+    status = (
+        ExtractionStatus.OK
+        if registry.status == ExtractionStatus.OK
+        else ExtractionStatus.NEEDS_REVIEW
+    )
+    return ExtractionRun(
+        registry=registry, status=status, attempts=calls, errors=errors
     )

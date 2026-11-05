@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -63,35 +64,56 @@ class SourceRef(BaseModel):
 # ── То, что возвращает модель ────────────────────────────────────────────
 
 
-class RawParticipant(BaseModel):
+class _StringCoercion(BaseModel):
+    """Приведение значений модели к строкам.
+
+    Pydantic v2 не приводит число к строке сам: `"value": 1000.0` в ответе
+    модели — это ошибка схемы, и категория целиком отбрасывалась. Модель
+    же часто отдаёт сумму числом, и это не повод терять факт.
+    """
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _to_text(cls, value: object) -> object:
+        if value is None:
+            return ""
+        if isinstance(value, (int, float)):
+            return str(value)
+        return value
+
+
+class RawParticipant(_StringCoercion):
     role: str = ""
     name: str = ""
     inn: str = ""
     quote: str = ""
 
 
-class RawAmount(BaseModel):
+class RawAmount(_StringCoercion):
     kind: str = ""
     value: str = ""
     quote: str = ""
 
 
-class RawDate(BaseModel):
+class RawDate(_StringCoercion):
     kind: str = ""
     value: str = ""
     quote: str = ""
 
 
-class RawClaim(BaseModel):
+class RawClaim(_StringCoercion):
     subject: str = ""
     amount: str = ""
     quote: str = ""
 
 
-class RawFact(BaseModel):
+class RawFact(_StringCoercion):
     text: str = ""
     category: str = ""
     quote: str = ""
+    #: Чья это позиция: истца, ответчика, суда. Требование §7.3 — не
+    #: смешивать утверждение стороны с установленным обстоятельством.
+    party: str = ""
 
 
 class ExtractionPayload(BaseModel):
@@ -144,6 +166,8 @@ class CaseFact(BaseModel):
     fact_id: str
     fact_type: str
     value: str
+    #: Чья позиция: plaintiff / defendant / court / other (ТЗ §7.3).
+    party: str = "other"
     source: SourceRef | None = None
     status: FactStatus = FactStatus.EXTRACTED
     confidence: float | None = Field(default=None, ge=0, le=1)
@@ -212,18 +236,22 @@ _ROLE_MAP = {
 def parse_money(raw: str) -> Decimal | None:
     """Строка с суммой в Decimal.
 
-    Допускаются пробелы, «руб.», запятая как разделитель дробной части и
-    минус (он означает не сумму, а ошибку разбора — возвращаем None).
+    Из строки берётся числовая часть: «1 256 850 рублей», «{1000.00} руб.»,
+    «2 450 000 (Два миллиона …) рублей» — всё это одна и та же сумма.
+    Минус означает не сумму, а ошибку разбора.
     """
     if not raw:
         return None
     text = raw.replace("\u00a0", " ").strip()
-    text = text.replace(" ", "").replace("руб.", "").replace("руб", "").replace("₽", "")
-    text = text.replace(",", ".")
-    if text in {"", "-", "—"}:
+    if text.lstrip().startswith("-"):
         return None
+
+    match = re.search(r"\d+(?:[ \u00a0]\d{3})*(?:[.,]\d{1,2})?", text)
+    if match is None:
+        return None
+    number = match.group(0).replace(" ", "").replace("\u00a0", "").replace(",", ".")
     try:
-        value = Decimal(text)
+        value = Decimal(number)
     except (InvalidOperation, ValueError):
         return None
     return value if value >= 0 else None
@@ -267,3 +295,46 @@ def normalize_role(raw: str) -> str:
         if key in text:
             return role
     return "other"
+
+
+_PARTY_MAP = {
+    "истц": "plaintiff",
+    "ответчик": "defendant",
+    "суд": "court",
+    "установлен": "court",
+    "plaintiff": "plaintiff",
+    "defendant": "defendant",
+    "court": "court",
+}
+
+
+def normalize_party(raw: str) -> str:
+    """Чья позиция: истца, ответчика, суда.
+
+    Утверждение истца и установленное судом обстоятельство — разные вещи;
+    смешивать их нельзя (§7.3). Если непонятно — `other`, а не догадка.
+    """
+    text = (raw or "").strip().lower()
+    for key, party in _PARTY_MAP.items():
+        if key in text:
+            return party
+    return "other"
+
+
+# ── Частичные ответы для извлечения по категориям (§14.2) ────────────────
+
+
+class ParticipantsPayload(BaseModel):
+    participants: list[RawParticipant] = Field(default_factory=list)
+
+
+class AmountsPayload(BaseModel):
+    amounts: list[RawAmount] = Field(default_factory=list)
+
+
+class DatesPayload(BaseModel):
+    dates: list[RawDate] = Field(default_factory=list)
+
+
+class ClaimsPayload(BaseModel):
+    claims: list[RawClaim] = Field(default_factory=list)

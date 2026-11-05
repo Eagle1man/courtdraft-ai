@@ -99,6 +99,11 @@ class TestValueParsing:
         assert parse_money("") is None
         assert parse_money("-100") is None
 
+    def test_money_with_roubles_words(self) -> None:
+        assert parse_money("1 256 850 рублей") == Decimal("1256850")
+        assert parse_money("2 450 000 (Два миллиона) рублей") == Decimal("2450000")
+        assert parse_money("{1000.00} руб.") == Decimal("1000.00")
+
     def test_date_formats(self) -> None:
         assert parse_date("15.01.2025") == date(2025, 1, 15)
         assert parse_date("2025-01-15") == date(2025, 1, 15)
