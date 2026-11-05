@@ -229,7 +229,7 @@ def _draft_out(
 # ── Фоновая задача ────────────────────────────────────────────────────
 
 
-async def _persist_job_state(job_id: uuid.UUID, **fields: object) -> None:
+async def persist_job_state(job_id: uuid.UUID, **fields: object) -> None:
     """Сохранить состояние задания в базе, не ломая генерацию.
 
     Реестр в памяти — источник быстрых ответов, база — то, что переживает
@@ -245,7 +245,7 @@ async def _persist_job_state(job_id: uuid.UUID, **fields: object) -> None:
         logger.warning("Не удалось сохранить состояние задания %s: %s", job_id, exc)
 
 
-async def _run_generation(
+async def run_generation(
     job_id: uuid.UUID,
     case_id: uuid.UUID,
     actor: str,
@@ -253,6 +253,10 @@ async def _run_generation(
     model: str,
 ) -> None:
     """Сформировать проект вне запроса.
+
+    Вызывается и из HTTP-запроса (BackgroundTasks), и из возобновления
+    после перезапуска службы (`app.services.job_recovery`) — поэтому
+    функция публичная, а не `_run_generation`.
 
     Настройки передаются явно. Если взять их из get_settings(), фоновая
     задача пошла бы по глобальному .env и проигнорировала бы ту
@@ -267,7 +271,7 @@ async def _run_generation(
     # остаётся PENDING, и интерфейс показывает ожидание, а не работу.
     async with _GENERATION_SLOTS:
         await jobs.update(job_id, state=JobState.RUNNING, started_at=_now())
-        await _persist_job_state(
+        await persist_job_state(
             job_id, state=JobState.RUNNING.value, started_at=_now()
         )
 
@@ -293,7 +297,7 @@ async def _run_generation(
                 result_version=version_number,
                 verification_status=verification_status,
             )
-            await _persist_job_state(
+            await persist_job_state(
                 job_id,
                 state=JobState.DONE.value,
                 finished_at=_now(),
@@ -311,7 +315,7 @@ async def _run_generation(
                 finished_at=_now(),
                 error=str(exc),
             )
-            await _persist_job_state(
+            await persist_job_state(
                 job_id,
                 state=JobState.FAILED.value,
                 finished_at=_now(),
@@ -326,7 +330,7 @@ async def _run_generation(
                 finished_at=_now(),
                 error=message,
             )
-            await _persist_job_state(
+            await persist_job_state(
                 job_id,
                 state=JobState.FAILED.value,
                 finished_at=_now(),
@@ -390,7 +394,7 @@ async def generate_draft(
         )
         await session.commit()
         background.add_task(
-            _run_generation, job.id, case_id, payload.actor, cfg, assignment.model
+            run_generation, job.id, case_id, payload.actor, cfg, assignment.model
         )
         return DraftJobOut(
             job_id=job.id,

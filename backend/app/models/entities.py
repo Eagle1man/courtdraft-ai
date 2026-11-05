@@ -704,6 +704,11 @@ class JobRecord(TimestampMixin, Base):
     verification_status: Mapped[str] = mapped_column(
         String(30), default="", nullable=False
     )
+    # Сколько раз задание уже пытались выполнить. Нужно, чтобы перезапуск
+    # службы не превратился в бесконечный цикл: задание, которое валит
+    # процесс (например, не хватает памяти), иначе возобновлялось бы после
+    # каждого старта и снова его валило.
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     def __repr__(self) -> str:
         return f"<JobRecord {self.id} {self.state} case={self.case_id}>"

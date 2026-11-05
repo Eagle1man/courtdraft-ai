@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -318,6 +319,25 @@ class DraftRepository:
         await self._session.flush()
         return verification
 
+    async def get_verification(
+        self, draft_id: uuid.UUID, draft_version: int
+    ) -> Verification | None:
+        """Результат проверки конкретной версии проекта.
+
+        Нужен при возобновлении задания: версия уже сохранена, и статус
+        проверки берётся из базы, а не выдумывается заново.
+        """
+        result = await self._session.execute(
+            select(Verification)
+            .where(
+                Verification.draft_id == draft_id,
+                Verification.draft_version == draft_version,
+            )
+            .order_by(Verification.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
 
 class EvidenceRepository:
     """Элементы пакета доказательств (п.26).
@@ -543,12 +563,32 @@ def new_case(case_number: str, court_name: str, case_type: str, **extra: Any) ->
     return values
 
 
+@dataclass(frozen=True, slots=True)
+class InterruptedJob:
+    """Задание, которое прервал перезапуск службы и можно повторить.
+
+    Отдельный тип, а не строка модели: сессия закрывается сразу после
+    захвата, и обращаться к атрибутам отсоединённого JobRecord было бы
+    ошибкой — они либо протухнут, либо потребуют новый запрос.
+    """
+
+    job_id: uuid.UUID
+    case_id: uuid.UUID
+    created_at: datetime
+    #: Когда задание впервые начало выполняться. Нужно, чтобы отличить
+    #: «успело сохранить результат, но не успело отметить готовность» от
+    #: «не успело ничего».
+    started_at: datetime | None
+    attempts: int
+
+
 class JobRepository:
     """Задания формирования проекта: состояние в базе.
 
     Реестр в памяти (`app.services.jobs`) остаётся быстрым кэшем, но
     источник истины — эта таблица. После перезапуска службы незавершённые
-    задания помечаются прерванными, а не висят «в очереди» вечно.
+    задания возвращаются на повтор, а не висят «в очереди» вечно и не
+    пропадают вместе с памятью процесса.
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -582,9 +622,8 @@ class JobRepository:
     async def mark_interrupted(self) -> int:
         """Пометить незавершённые задания прерванными при старте службы.
 
-        Задание, которое было в работе, после остановки процесса уже не
-        завершится, а ожидавшее в очереди — никогда не начнётся: очередь
-        жила в памяти. Честнее сказать это сразу.
+        Крайняя мера: применяется, когда повтор невозможен (возобновление
+        выключено настройкой). Клиент видит причину, а не вечное «в очереди».
         """
         result = await self._session.execute(
             update(JobRecord)
@@ -599,3 +638,64 @@ class JobRepository:
             )
         )
         return int(result.rowcount or 0)
+
+    async def claim_interrupted(self, *, max_attempts: int = 1) -> list[InterruptedJob]:
+        """Забрать незавершённые задания на повтор после перезапуска.
+
+        Возвращает те, что ещё не исчерпали попытки. Задания, прерывавшиеся
+        уже ``max_attempts`` раз, помечаются проваленными с причиной:
+        повторять их бесконечно нельзя — задание, валящее процесс, иначе
+        превратит перезапуск службы в цикл.
+
+        Метод только меняет состояние в сессии; коммит делает вызывающий.
+        """
+        result = await self._session.execute(
+            select(JobRecord)
+            .where(JobRecord.state.in_(("PENDING", "RUNNING")))
+            .order_by(JobRecord.created_at)
+        )
+        records = list(result.scalars())
+
+        resumable: list[InterruptedJob] = []
+        exhausted: list[uuid.UUID] = []
+        for record in records:
+            if record.attempts >= max_attempts:
+                exhausted.append(record.id)
+                continue
+            resumable.append(
+                InterruptedJob(
+                    job_id=record.id,
+                    case_id=record.case_id,
+                    created_at=record.created_at,
+                    started_at=record.started_at,
+                    attempts=record.attempts,
+                )
+            )
+
+        if resumable:
+            await self._session.execute(
+                update(JobRecord)
+                .where(JobRecord.id.in_([job.job_id for job in resumable]))
+                .values(
+                    state="PENDING",
+                    attempts=JobRecord.attempts + 1,
+                    finished_at=None,
+                    error="",
+                )
+            )
+
+        if exhausted:
+            await self._session.execute(
+                update(JobRecord)
+                .where(JobRecord.id.in_(exhausted))
+                .values(
+                    state="FAILED",
+                    finished_at=datetime.now(UTC),
+                    error=(
+                        "служба перезапускалась несколько раз — задача "
+                        "прервана; запустите формирование проекта заново"
+                    ),
+                )
+            )
+
+        return resumable

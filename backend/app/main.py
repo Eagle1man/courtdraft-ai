@@ -11,9 +11,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, Request, status
@@ -24,10 +25,11 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import cases, demo, drafts, feedback, system
 from app.config import Settings, get_settings
 from app.db.bootstrap import MIGRATE_HINT, check_schema_drift, ensure_schema
-from app.db.repositories import JobRepository
+from app.db.repositories import InterruptedJob, JobRepository
 from app.db.session import describe_url
 from app.services.case_service import db, session_scope
 from app.services.health_service import DISCLAIMER, VERSION
+from app.services.job_recovery import resume_interrupted
 
 logging.basicConfig(
     level=getattr(logging, get_settings().log_level.upper(), logging.INFO),
@@ -86,18 +88,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
 
             # Очередь заданий жила в памяти: после остановки процесса
-            # незавершённые задания не продолжатся. Помечаем их
-            # прерванными, чтобы клиент видел причину, а не вечное
-            # «в очереди». Это факт, а не догадка.
+            # незавершённые задания не продолжались. Теперь их состояние в
+            # базе, и незавершённые возвращаются в работу — кроме тех, что
+            # уже прерывались: повторять вечно задание, которое валит
+            # процесс, нельзя.
+            recovered: list[InterruptedJob] = []
             try:
                 async with session_scope(db.factory) as session:
-                    interrupted = await JobRepository(session).mark_interrupted()
-                if interrupted:
-                    logger.warning(
-                        "Прервано заданий после перезапуска: %d", interrupted
-                    )
+                    repo = JobRepository(session)
+                    if cfg.job_resume_enabled:
+                        recovered = await repo.claim_interrupted(
+                            max_attempts=cfg.job_resume_max_attempts
+                        )
+                    else:
+                        interrupted = await repo.mark_interrupted()
+                        if interrupted:
+                            logger.warning(
+                                "Прервано заданий после перезапуска: %d", interrupted
+                            )
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Не удалось пометить прерванные задания: %s", exc)
+                logger.warning("Не удалось разобрать прерванные задания: %s", exc)
+
+            if recovered:
+                # Отдельной задачей, а не в старте: генерация идёт минуты,
+                # и ждать её до открытия порта нельзя.
+                app.state.jobs_recovery = asyncio.create_task(
+                    resume_interrupted(cfg, recovered), name="jobs-recovery"
+                )
         else:
             logger.warning(
                 "БД недоступна. Система работает без эндпоинтов дел. "
@@ -114,6 +131,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not cfg.is_real_mode:
             logger.info("MOCK-режим: реальная LLM не вызывается (это штатно для разработки)")
         yield
+        # Возобновлённые задания отменяются вместе со службой: иначе
+        # фоновый цикл переживёт приложение и будет держать модель.
+        recovery = getattr(app.state, "jobs_recovery", None)
+        if recovery is not None and not recovery.done():
+            recovery.cancel()
+            with suppress(asyncio.CancelledError):
+                await recovery
         await db.disconnect()
         logger.info("ИИ помощник судьи остановлен")
 

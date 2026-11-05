@@ -1317,3 +1317,149 @@ class TestJobPersistence:
         assert got.status_code == 200, got.text
         assert got.json()["job_id"] == job_id
         assert got.json()["state"] in ("PENDING", "RUNNING", "DONE", "FAILED")
+
+
+# ── Возобновление заданий после перезапуска ───────────────────────────
+
+
+class TestJobRecovery:
+    """Незавершённое задание после рестарта возвращается в работу.
+
+    Раньше перезапуск службы терял работу целиком: человек ждал минуты и
+    получал отказ, хотя материалы дела никуда не делись.
+    """
+
+    async def test_claim_returns_job_for_retry(
+        self, session: AsyncSession, case_factory
+    ) -> None:  # noqa: ANN001
+        from app.db.repositories import JobRepository
+
+        case = await case_factory("JOB-101")
+        repo = JobRepository(session)
+        job_id = uuid.uuid4()
+        await repo.create(job_id=job_id, case_id=case.id, state="RUNNING")
+        await session.flush()
+
+        claimed = await repo.claim_interrupted(max_attempts=1)
+
+        assert [item.job_id for item in claimed] == [job_id]
+        assert claimed[0].case_id == case.id
+        record = await repo.get(job_id)
+        assert record is not None
+        # Состояние возвращается в очередь, а не в «провалено».
+        assert record.state == "PENDING"
+        assert record.attempts == 1
+
+    async def test_claim_gives_up_after_attempts(
+        self, session: AsyncSession, case_factory
+    ) -> None:  # noqa: ANN001
+        """Задание, которое валит процесс, не возобновляется вечно."""
+        from app.db.repositories import JobRepository
+
+        case = await case_factory("JOB-102")
+        repo = JobRepository(session)
+        job_id = uuid.uuid4()
+        await repo.create(job_id=job_id, case_id=case.id, state="RUNNING")
+        await session.flush()
+        await repo.update(job_id, attempts=1)
+
+        claimed = await repo.claim_interrupted(max_attempts=1)
+
+        assert claimed == []
+        record = await repo.get(job_id)
+        assert record is not None
+        assert record.state == "FAILED"
+        assert "перезапускалась" in record.error
+
+    async def test_done_job_is_not_claimed(
+        self, session: AsyncSession, case_factory
+    ) -> None:  # noqa: ANN001
+        from app.db.repositories import JobRepository
+
+        case = await case_factory("JOB-103")
+        repo = JobRepository(session)
+        job_id = uuid.uuid4()
+        await repo.create(job_id=job_id, case_id=case.id, state="DONE")
+        await session.flush()
+
+        assert await repo.claim_interrupted(max_attempts=1) == []
+
+    async def test_resume_runs_generation_with_original_job(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Возобновление вызывает ту же генерацию, что и кнопка в интерфейсе.
+
+        Проверяется связка: задание попадает в реестр памяти (иначе опрос
+        статуса шёл бы мимо), модель берётся закреплённая за делом, а
+        идентификатор задания не меняется — клиент продолжает его опрашивать.
+        """
+        from datetime import UTC, datetime
+
+        from app.db.repositories import InterruptedJob
+        from app.services import job_recovery
+        from app.services.jobs import jobs
+
+        calls: list[tuple[uuid.UUID, uuid.UUID, str, str]] = []
+
+        async def _no_saved(_item):  # noqa: ANN001, ANN202
+            return None
+
+        async def _model(_cfg, _case_id):  # noqa: ANN001, ANN202
+            return "test-model"
+
+        async def _generation(job_id, case_id, actor, _cfg, model):  # noqa: ANN001, ANN202
+            calls.append((job_id, case_id, actor, model))
+
+        monkeypatch.setattr(job_recovery, "_saved_work", _no_saved)
+        monkeypatch.setattr(job_recovery, "_model_for_case", _model)
+        monkeypatch.setattr("app.api.routes.drafts.run_generation", _generation)
+
+        job_id = uuid.uuid4()
+        case_id = uuid.uuid4()
+        item = InterruptedJob(
+            job_id=job_id,
+            case_id=case_id,
+            created_at=datetime.now(UTC),
+            started_at=datetime.now(UTC),
+            attempts=0,
+        )
+
+        outcome = await job_recovery.resume_one(Settings(), item)
+
+        assert outcome == "resumed"
+        assert calls == [(job_id, case_id, "system", "test-model")]
+        adopted = await jobs.get(job_id)
+        assert adopted is not None
+        assert adopted.case_id == case_id
+
+    async def test_job_result_recognised_by_author_and_time(self) -> None:
+        """Обрыв между сохранением версии и отметкой «готово» не дублирует текст."""
+        from datetime import UTC, datetime
+
+        from app.services.job_recovery import _as_utc, _is_result_of_job
+
+        started = datetime(2026, 11, 5, 9, 0, tzinfo=UTC)
+
+        # Модель успела сохранить версию после начала задания — работа сделана.
+        assert _is_result_of_job(
+            author="ai", created_at=datetime(2026, 11, 5, 9, 3), started_at=started
+        )
+        # Версия старше задания — она от прошлого запуска, повтор нужен.
+        assert not _is_result_of_job(
+            author="ai", created_at=datetime(2026, 11, 5, 8, 0), started_at=started
+        )
+        # Ручную правку нельзя принять за результат задания.
+        assert not _is_result_of_job(
+            author="user", created_at=datetime(2026, 11, 5, 9, 5), started_at=started
+        )
+        # Задание не начиналось — сравнивать не с чем.
+        assert not _is_result_of_job(
+            author="ai", created_at=datetime(2026, 11, 5, 9, 3), started_at=None
+        )
+
+        # Наивное время из SQLite не должно ломать сравнение с зоной.
+        assert _as_utc(None) is None
+        naive = _as_utc(datetime(2026, 11, 5, 9, 0))
+        assert naive is not None
+        assert naive.tzinfo is not None
+
