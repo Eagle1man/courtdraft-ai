@@ -345,11 +345,50 @@ def _apply_ocr(
     )
 
 
+def _render_table(table: object, number: int, *, depth: int = 0) -> str:
+    """Таблица в текст с сохранением строк и ячеек.
+
+    Почему текст, а не Markdown-таблица: чанкер режет документ по абзацам
+    (`\\n\\n`), и внутри таблицы нужны целые строки, а не разметка.
+    Разделитель « | » позволяет видеть, какая сумма к какой графе
+    относится, — без него расчёт превращается в набор чисел.
+
+    Объединённые ячейки python-docx отдаёт по одной на каждую позицию
+    сетки; повторять текст дважды нельзя — «1 000 | 1 000» выглядит как
+    две разные суммы.
+    """
+    indent = "  " * depth
+    rows = getattr(table, "rows", [])
+    lines = [f"{indent}Таблица {number}:"]
+    for row in rows:
+        cells: list[str] = []
+        previous = None
+        for cell in row.cells:
+            element = getattr(cell, "_tc", None)
+            if element is not None and element is previous:
+                continue
+            previous = element
+            cells.append(" ".join((cell.text or "").split()))
+        lines.append(f"{indent}| " + " | ".join(cells) + " |")
+
+        # Вложенные таблицы: в тексте ячейки их нет, без обхода они
+        # потерялись бы так же, как раньше терялись все таблицы.
+        for cell in row.cells:
+            for nested_index, nested in enumerate(getattr(cell, "tables", []), start=1):
+                lines.append(_render_table(nested, nested_index, depth=depth + 1))
+    return "\n".join(lines)
+
+
 def _extract_docx(data: bytes, limit: int) -> ExtractedDocument:
-    """DOCX: абзацы и заголовки с сохранением иерархии.
+    """DOCX: абзацы, заголовки и таблицы с сохранением порядка.
 
     Заголовки помечаются префиксом, потому что чанкер (Фаза 5) режет
     документ по структуре, а не на равные куски (п.14).
+
+    Таблицы раньше только считались в метаданных, а их содержимое
+    выбрасывалось: расчёты задолженности и графики платежей не попадали
+    в пакет доказательств, и модель «выдумывала» суммы, которых не
+    видела. Теперь таблица становится отдельным блоком текста.
     """
     try:
         import io
@@ -364,23 +403,36 @@ def _extract_docx(data: bytes, limit: int) -> ExtractedDocument:
         raise ExtractionError(f"Не удалось прочитать DOCX: {exc}") from exc
 
     parts: list[str] = []
-    for paragraph in document.paragraphs:
-        content = (paragraph.text or "").strip()
-        if not content:
-            parts.append("")
-            continue
+    total = 0
+    tables = 0
+    table_rows = 0
 
-        style = (paragraph.style.name or "").lower() if paragraph.style else ""
-        if style.startswith("heading"):
-            # Уровень заголовка: Heading 1 -> «#», Heading 2 -> «##».
-            level = "".join(ch for ch in style if ch.isdigit()) or "1"
-            parts.append(f"{'#' * min(int(level), 6)} {content}")
-        elif style == "title":
-            parts.append(f"# {content}")
-        else:
-            parts.append(content)
+    for block in document.iter_inner_content():
+        if isinstance(block, docx.text.paragraph.Paragraph):
+            content = (block.text or "").strip()
+            if not content:
+                parts.append("")
+                continue
 
-        if sum(len(p) for p in parts) >= limit:
+            style = (block.style.name or "").lower() if block.style else ""
+            if style.startswith("heading"):
+                # Уровень заголовка: Heading 1 -> «#», Heading 2 -> «##».
+                level = "".join(ch for ch in style if ch.isdigit()) or "1"
+                parts.append(f"{'#' * min(int(level), 6)} {content}")
+            elif style == "title":
+                parts.append(f"# {content}")
+            else:
+                parts.append(content)
+            total += len(content)
+        elif isinstance(block, docx.table.Table):
+            tables += 1
+            rows = len(block.rows)
+            table_rows += rows
+            rendered = _render_table(block, tables)
+            parts.append(rendered)
+            total += len(rendered)
+
+        if total >= limit:
             break
 
     text = clean_text("\n\n".join(parts))[:limit]
@@ -388,7 +440,11 @@ def _extract_docx(data: bytes, limit: int) -> ExtractedDocument:
         text=text,
         pages=[Page(number=1, text=text)],
         page_count=1,
-        metadata={"paragraphs": len(document.paragraphs), "tables": len(document.tables)},
+        metadata={
+            "paragraphs": len(document.paragraphs),
+            "tables": tables,
+            "table_rows": table_rows,
+        },
     )
 
 
