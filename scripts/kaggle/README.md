@@ -9,6 +9,13 @@
 |---|---|---|
 | `D:\courtdraft-datasets\court-decisions-feb2026.jsonl` | 1,99 ГБ | 29 058 гражданских решений |
 | `D:\courtdraft-datasets\sft-established-feb2026.jsonl` | 21 МБ | **1 413 пар** «материалы → установительная часть» |
+| `D:\courtdraft-datasets\sft-established-mixed.jsonl` | 21,9 МБ | **1 434 пары**: корпус + 21 пара из решений, лежавших в материалах теста |
+
+Пары из снимка собирает `scripts/dataset/extract_snapshot.py`: берёт
+документы, в которых есть и «УСТАНОВИЛ», и «РЕШИЛ» (настоящие решения, а
+не сгенерированные проекты), и строит пары тем же промптом, что и
+сервис. Сгенерированные проекты в обучение не идут: в них есть
+утверждения без источника, и учить на них — закреплять ошибки.
 
 Датасет собран скриптом `scripts/dataset/build_sft.py` в том же формате
 промптов, что использует сервис. Проверка формата:
@@ -16,6 +23,39 @@
 ```powershell
 python scripts\dataset\build_sft.py --dry-run
 ```
+
+## Запуск через CLI (без веб-интерфейса)
+
+Всё то же можно сделать командами. Проверено 05.11.2026 на 1.5B:
+
+```powershell
+$env:KAGGLE_API_TOKEN = "<токен KGAT_...>"
+
+# 1. датасет (файлы + обучающий скрипт рядом)
+kaggle datasets create -p D:\courtdraft-datasets\kaggle-upload
+
+# 2. ядро с GPU
+kaggle kernels push -p D:\courtdraft-datasets\kaggle-kernel-v2
+
+# 3. состояние и журнал
+kaggle kernels status orel1986/courtdraft-1p5b-v2
+kaggle kernels output orel1986/courtdraft-1p5b-v2 -p D:\courtdraft-datasets\kaggle-out-v2
+```
+
+Три грабли, на которых это падало:
+
+1. **Путь к датасету не угадывать.** Kaggle монтирует датасет под слагом,
+   и `/kaggle/input/<id>` может оказаться пустым каталогом. Скрипт
+   запуска ищет файл через `rglob` по `/kaggle/input` и печатает дерево.
+2. **`trl` не обновлять.** Unsloth 2026.11.2 требует `trl <= 1.15.0`;
+   `pip install --upgrade trl` ставит 1.17 и обучение падает на импорте.
+3. **BOM в `kernel-metadata.json`.** Файл, записанный PowerShell
+   `Set-Content -Encoding UTF8`, начинается с BOM, и CLI падает
+   с «Unexpected UTF-8 BOM». Писать без BOM (`UTF8Encoding($false)`).
+
+Ещё: обновление уже созданного ядра (`SaveKernel`) иногда отваливается
+по таймауту, а создание нового проходит. Если push завис — завести
+ядро с новым id.
 
 ## Шаг 1. Загрузить датасет в Kaggle
 
