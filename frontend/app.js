@@ -20,15 +20,18 @@ const POLL_INTERVAL = 3000;
 // Версия сборки интерфейса. Должна совпадать с ?v= в index.html:
 // браузер кэширует app.js по этому адресу, и при неизменном ?v он
 // продолжает показывать старый файл, даже когда на сервере новый.
-const UI_BUILD = "0.6.0";
+const UI_BUILD = "0.6.7";
 
-// Код участника хранится в браузере: студент вводит его один раз, и оба
-// его дела (первое и второе) связываются для последующего разбора.
+// Код участника живёт в памяти вкладки (sessionStorage), а не в браузере
+// навсегда. Компьютер в аудитории общий: перезагрузка страницы код
+// сохраняет, а закрытая вкладка или окно — забывает, и следующий участник
+// вводит свой. Раньше код лежал в localStorage, и на том же компьютере
+// при следующем заходе открывалась чужая сессия.
 const STUDENT_KEY = "courtdraft_student_code";
 
 function currentStudentCode() {
   try {
-    return (localStorage.getItem(STUDENT_KEY) || "").trim();
+    return (sessionStorage.getItem(STUDENT_KEY) || "").trim();
   } catch {
     return "";
   }
@@ -36,10 +39,25 @@ function currentStudentCode() {
 
 function rememberStudentCode(code) {
   try {
-    if (code) localStorage.setItem(STUDENT_KEY, code);
+    if (code) sessionStorage.setItem(STUDENT_KEY, code);
   } catch {
-    // Приватный режим браузера может запрещать localStorage — не повод
+    // Приватный режим браузера может запрещать хранилище — не повод
     // ломать создание дела.
+  }
+}
+
+/* Выйти из сессии участника: забыть код и убрать его данные с экрана.
+
+   Нужно именно действие, а не закрытие браузера: компьютер общий, и
+   следующий человек не должен увидеть дела предыдущего. */
+function forgetStudentCode() {
+  try {
+    sessionStorage.removeItem(STUDENT_KEY);
+    // Старое постоянное значение: если оно осталось от прежней версии,
+    // больше не используется, но и лежать ему незачем.
+    localStorage.removeItem(STUDENT_KEY);
+  } catch {
+    // Доступ к хранилищу запрещён — код всё равно уйдёт из памяти вкладки.
   }
 }
 
@@ -62,7 +80,28 @@ function withStudentCode(path) {
 function studentGateOpen() {
   $("gate-student").value = currentStudentCode();
   $("gate-error").hidden = true;
+  // Кнопка выхода нужна только тем, кто уже вошёл: незачем предлагать
+  // «выйти» человеку, который ещё не вводил код.
+  $("gate-forget").hidden = !currentStudentCode();
   $("student-gate").hidden = false;
+  $("gate-student").focus();
+}
+
+/* Выйти из сессии: код забыт, дела прежнего участника убраны с экрана. */
+function forgetStudent() {
+  forgetStudentCode();
+  state.cases = [];
+  state.currentCase = null;
+  state.documents = [];
+  state.draft = null;
+  state.loadingCaseId = null;
+  $("doc-list").innerHTML = "";
+  $("case-list").innerHTML = "";
+  $("gate-student").value = "";
+  renderStudentBadge();
+  renderSteps();
+  updateDocsLabel();
+  studentGateOpen();
   $("gate-student").focus();
 }
 
@@ -1479,6 +1518,7 @@ $("btn-new-case").onclick = async () => {
 
 /* Ввод кода участника: без него интерфейс не начинает работу. */
 $("gate-submit").onclick = acceptStudentCode;
+$("gate-forget").onclick = forgetStudent;
 $("gate-student").onkeydown = (event) => {
   if (event.key === "Enter") acceptStudentCode();
 };

@@ -138,6 +138,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             recovery.cancel()
             with suppress(asyncio.CancelledError):
                 await recovery
+        # Файловый Qdrant держит каталог индекса: закрываем клиент явно,
+        # иначе следующий запуск упрётся в блокировку прошлого процесса.
+        from app.rag.shared import close_store
+
+        close_store()
         await db.disconnect()
         logger.info("ИИ помощник судьи остановлен")
 

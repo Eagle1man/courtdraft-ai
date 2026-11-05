@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections.abc import Sequence
 
@@ -19,6 +18,7 @@ from app.config import Settings, get_settings
 from app.datasets.law_corpus import LawChunk
 from app.embeddings import build_embedding_provider
 from app.embeddings.base import Embedding, EmbeddingProvider
+from app.rag.shared import get_store
 from app.rag.store import CollectionName, SearchResult, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -130,9 +130,11 @@ async def law_context_for_case(
     cfg = settings or get_settings()
     if not cfg.rag_laws_enabled or not (query or "").strip():
         return []
-    store = None
     try:
-        store = VectorStore.from_settings(cfg)
+        # Клиент общий на процесс: файловый Qdrant не допускает второго
+        # открытия того же каталога, а закрывать его после каждого поиска
+        # нельзя — следующий запрос снова упрётся в блокировку.
+        store = get_store(cfg)
         embedder = build_embedding_provider(cfg)
         results = await search_laws(
             store, embedder, query[:2000], top_k=cfg.rag_laws_top_k
@@ -141,9 +143,3 @@ async def law_context_for_case(
     except Exception as exc:  # noqa: BLE001
         logger.warning("База знаний по нормам недоступна: %s", exc)
         return []
-    finally:
-        # Локальный Qdrant держит файл индекса: клиент надо закрывать,
-        # иначе на каждый проект остаётся открытый дескриптор.
-        if store is not None:
-            with contextlib.suppress(Exception):
-                store.client.close()

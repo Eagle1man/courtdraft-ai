@@ -150,35 +150,43 @@ async def _check_qdrant(cfg: Settings) -> ComponentHealth:
     сервер поднимать не нужно, а поддержка payload-фильтров и поиска
     по сходству полная. Данные не переживают перезапуск — это осознанно
     для режима разработки, не для работы.
-    """
-    from app.rag.store import VectorStore
 
-    if cfg.qdrant_mode == QdrantMode.MEMORY:
+    Клиент берётся общий на процесс (`app.rag.shared`): файловый Qdrant
+    не допускает второго открытия того же каталога, а health опрашивает
+    каждый открытый браузер раз в минуту.
+    """
+    from app.rag.shared import get_store
+
+    if cfg.qdrant_mode in {QdrantMode.MEMORY, QdrantMode.LOCAL}:
+        local = cfg.qdrant_mode == QdrantMode.LOCAL
         try:
-            store = VectorStore.from_settings(cfg)
+            store = get_store(cfg)
             alive = store.health()
             detail = (
-                "встроенный режим (memory), сервер не требуется; "
+                f"файловый индекс: {cfg.qdrant_path}"
+                if local
+                else "встроенный режим (memory), сервер не требуется; "
                 "данные не переживают перезапуск"
             )
         except Exception as exc:  # noqa: BLE001
+            state = ComponentState.UNAVAILABLE if local else ComponentState.MOCK
             return ComponentHealth(
                 name="Qdrant",
-                state=ComponentState.MOCK,
-                detail=f"встроенный режим недоступен: {str(exc)[:120]}",
+                state=state,
+                detail=f"хранилище недоступно: {str(exc)[:120]}",
                 required=False,
             )
 
         return ComponentHealth(
             name="Qdrant",
-            state=ComponentState.MOCK if alive else ComponentState.UNAVAILABLE,
+            state=ComponentState.OK if alive else ComponentState.UNAVAILABLE,
             detail=detail,
             required=False,
         )
 
     # Серверный режим: недоступность здесь — уже проблема.
     try:
-        store = VectorStore.from_settings(cfg)
+        store = get_store(cfg)
         alive = store.health()
     except Exception as exc:  # noqa: BLE001
         return ComponentHealth(

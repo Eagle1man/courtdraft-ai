@@ -66,7 +66,15 @@ class DraftService:
     # ── Пакет доказательств ───────────────────────────────────
 
     async def build_pack(self, case_id: uuid.UUID) -> EvidencePack:
-        """Собрать пакет доказательств по делу."""
+        """Собрать пакет доказательств по делу.
+
+        Нормы из базы знаний здесь **не** подмешиваются: поиск норм — это
+        сетевой вызов эмбеддингов, а пакет собирается внутри транзакции
+        SQLite. `BEGIN IMMEDIATE` берёт блокировку записи на любой запрос,
+        включая чтение, поэтому вызов модели внутри транзакции держал её
+        десятки секунд, и остальные запросы падали с «database is locked».
+        Нормы добавляет `apply_law_context` — после закрытия транзакции.
+        """
         case = await self.cases.get(case_id)
         if case is None:
             raise LookupError(f"Дело {case_id} не найдено")
@@ -78,7 +86,7 @@ class DraftService:
             )
 
         cfg = get_settings()
-        pack = build_evidence_pack(
+        return build_evidence_pack(
             case.case_number,
             case.court_name,
             case.category,
@@ -87,17 +95,22 @@ class DraftService:
             settings=cfg,
         )
 
-        # Нормы из базы знаний подмешиваются к пакету до генерации.
-        # Запрос — требования и обстоятельства: искать по всему делу
-        # дороже и менее точно.
-        if cfg.rag_laws_enabled:
-            query = " ".join(
-                item.text
-                for item in pack.items
-                if item.category in {"claims", "objections", "evidence", "established_facts"}
-            )[:1500]
-            pack.law_context = await law_context_for_case(query, cfg)
-        return pack
+    async def apply_law_context(self, pack: EvidencePack) -> None:
+        """Подмешать нормы к пакету — только вне транзакции базы.
+
+        Запрос — требования и обстоятельства: искать по всему делу дороже
+        и менее точно. Любой сбой поиска не должен ломать генерацию:
+        `law_context_for_case` в этом случае возвращает пусто.
+        """
+        cfg = get_settings()
+        if not cfg.rag_laws_enabled:
+            return
+        query = " ".join(
+            item.text
+            for item in pack.items
+            if item.category in {"claims", "objections", "evidence", "established_facts"}
+        )[:1500]
+        pack.law_context = await law_context_for_case(query, cfg)
 
     async def save_pack(self, case_id: uuid.UUID, pack: EvidencePack) -> int:
         """Сохранить пакет доказательств в базу."""
@@ -162,6 +175,12 @@ class DraftService:
         if case is None:
             raise LookupError(f"Дело {case_id} не найдено")
         pack = await self.build_pack(case_id)
+        # Транзакция закрывается ДО сетевого вызова: поиск норм занимает
+        # секунды, и всё это время блокировка записи SQLite держалась бы,
+        # останавливая список дел, загрузку документов и создание новых.
+        await self._session.commit()
+        await self.apply_law_context(pack)
+
         saved = await self.save_pack(case_id, pack)
         # Коммит до вызова модели обязателен. Иначе транзакция записи
         # (пакет доказательств) остаётся открытой на все 3–4 минуты
