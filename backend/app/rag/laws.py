@@ -129,6 +129,7 @@ async def law_context_for_case(
     cfg = settings or get_settings()
     if not cfg.rag_laws_enabled or not (query or "").strip():
         return []
+    store = None
     try:
         store = VectorStore.from_settings(cfg)
         embedder = build_embedding_provider(cfg)
@@ -139,3 +140,11 @@ async def law_context_for_case(
     except Exception as exc:  # noqa: BLE001
         logger.warning("База знаний по нормам недоступна: %s", exc)
         return []
+    finally:
+        # Локальный Qdrant держит файл индекса: клиент надо закрывать,
+        # иначе на каждый проект остаётся открытый дескриптор.
+        if store is not None:
+            try:
+                store.client.close()
+            except Exception:  # noqa: BLE001,S110
+                pass
