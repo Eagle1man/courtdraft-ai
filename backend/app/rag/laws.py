@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Sequence
 
@@ -144,7 +145,5 @@ async def law_context_for_case(
         # Локальный Qdrant держит файл индекса: клиент надо закрывать,
         # иначе на каждый проект остаётся открытый дескриптор.
         if store is not None:
-            try:
+            with contextlib.suppress(Exception):
                 store.client.close()
-            except Exception:  # noqa: BLE001,S110
-                pass
