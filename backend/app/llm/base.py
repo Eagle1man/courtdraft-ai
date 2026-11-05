@@ -47,6 +47,14 @@ class LLMRequest(BaseModel):
         default=False,
         description="Ожидается валидный JSON в ответе",
     )
+    json_schema: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "JSON Schema ответа (Ollama Structured Output). Если задана, "
+            "модель обязана вернуть объект этой формы; json_mode тогда "
+            "включается автоматически."
+        ),
+    )
     reasoning: bool | None = Field(
         default=None,
         description=(

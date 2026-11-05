@@ -94,7 +94,11 @@ class OllamaProvider:
         }
         # json_mode на уровне протокола Ollama не гарантирован, поэтому
         # требование JSON дублируется инструкцией в системном сообщении.
-        if request.json_mode:
+        # Если передана схема — Ollama ограничивает генерацию ею (Structured
+        # Output), и модель физически не может вернуть поля другой формы.
+        if request.json_schema is not None:
+            payload["format"] = request.json_schema
+        elif request.json_mode:
             payload["format"] = "json"
 
         url = f"{self._base_url}/api/chat"
