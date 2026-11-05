@@ -22,10 +22,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
+from pathlib import Path
 
 from qdrant_client import QdrantClient, models
 
-from app.config import QdrantMode, Settings, get_settings
+from app.config import PROJECT_ROOT, QdrantMode, Settings, get_settings
 from app.embeddings.base import Embedding
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,16 @@ class VectorStore:
 
         if cfg.qdrant_mode is QdrantMode.SERVER:
             client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key or None)
+        elif cfg.qdrant_mode is QdrantMode.LOCAL:
+            # Файловый режим: индекс переживает перезапуск службы и не
+            # требует отдельного сервера. Без него база знаний по нормам
+            # исчезала бы после каждого рестарта — строить её заново на
+            # 2 543 пассажа долго.
+            path = Path(cfg.qdrant_path)
+            if not path.is_absolute():
+                path = PROJECT_ROOT / path
+            path.mkdir(parents=True, exist_ok=True)
+            client = QdrantClient(path=str(path))
         else:
             # Встроенный режим: тестовый и MOCK-конвейер без сервера.
             client = QdrantClient(":memory:")

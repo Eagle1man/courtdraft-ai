@@ -24,6 +24,7 @@ from app.agents.evidence_pack import (
     load_template,
     template_name_for_case,
 )
+from app.config import get_settings
 from app.db.repositories import (
     AuditRepository,
     CaseRepository,
@@ -40,6 +41,7 @@ from app.models.entities import (
     EvidenceItem,
     Verification,
 )
+from app.rag.laws import law_context_for_case
 from app.verification.engine import VerificationReport, verify_draft
 from app.verification.recheck import recheck_version
 
@@ -75,13 +77,27 @@ class DraftService:
                 "В деле нет документов. Проект нельзя составить по пустому делу."
             )
 
-        return build_evidence_pack(
+        cfg = get_settings()
+        pack = build_evidence_pack(
             case.case_number,
             case.court_name,
             case.category,
             documents,
             case_type=case.case_type,
+            settings=cfg,
         )
+
+        # Нормы из базы знаний подмешиваются к пакету до генерации.
+        # Запрос — требования и обстоятельства: искать по всему делу
+        # дороже и менее точно.
+        if cfg.rag_laws_enabled:
+            query = " ".join(
+                item.text
+                for item in pack.items
+                if item.category in {"claims", "objections", "evidence", "established_facts"}
+            )[:1500]
+            pack.law_context = await law_context_for_case(query, cfg)
+        return pack
 
     async def save_pack(self, case_id: uuid.UUID, pack: EvidencePack) -> int:
         """Сохранить пакет доказательств в базу."""

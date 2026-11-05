@@ -295,7 +295,9 @@ def build_section_prompt(
     # рассказа о деле. Без него модель не может ни изложить требования
     # истца, ни выстроить хронологию, и раздел уходит в пометку
     # «материалы не позволяют подготовить раздел».
-    full_blocks, full_citations = _full_document_blocks(pack, section.get("key", ""))
+    full_blocks, full_citations = _full_document_blocks(
+        pack, section.get("key", ""), budget=pack.context_budget
+    )
     if full_blocks:
         evidence_blocks.append(
             "[полные тексты ключевых документов]\n" + "\n\n".join(full_blocks)
@@ -307,6 +309,14 @@ def build_section_prompt(
     if pack.gaps:
         evidence_blocks.append(
             "[пробелы в материалах]\n" + "\n".join(f"- {gap}" for gap in pack.gaps)
+        )
+
+    # Нормы из базы знаний. Подмешиваются только в разделы, где модель
+    # рассуждает о праве: резолютивная и вводная собираются правилами,
+    # и лишний текст им не нужен.
+    if pack.law_context and section.get("key") in {"established", "motivating"}:
+        evidence_blocks.append(
+            "[нормы права из базы знаний]\n" + "\n\n".join(pack.law_context)
         )
 
     if not evidence_blocks:
@@ -1201,7 +1211,9 @@ async def generate_draft(
                 # качество на маленькой модели и растягивает время на CPU.
                 # 420 токенов — предел для 1.5B на CPU: дальше качество
                 # падает быстрее, чем растёт время генерации.
-                max_tokens=420 if attempt == 0 else 760,
+                max_tokens=(
+                    cfg.draft_max_tokens if attempt == 0 else cfg.draft_max_tokens_retry
+                ),
             )
             started_section = time.perf_counter()
             try:

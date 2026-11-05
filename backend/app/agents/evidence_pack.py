@@ -137,6 +137,16 @@ class EvidencePack:
     #: ГПК РФ — 21 случай из 26 на живом тесте.
     jurisdiction: str = ""
 
+    #: Тексты норм из базы знаний (ГК/ГПК/АПК). Пусто, если база
+    #: выключена или индекс не построен: генерация не должна зависеть от
+    #: наличия RAG.
+    law_context: list[str] = field(default_factory=list)
+
+    #: Бюджет сплошных текстов документов на раздел, в знаках. Задаётся
+    #: настройкой (DRAFT_CONTEXT_CHARS): под 7B с большим num_ctx его
+    #: можно поднять, под 1.5B — нельзя без потери качества.
+    context_budget: int = 4000
+
     def by_category(self, category: str) -> list[EvidenceItem]:
         return [item for item in self.items if item.category == category]
 
@@ -575,6 +585,7 @@ def build_evidence_pack(
         court_name=court_name,
         category=category,
         jurisdiction=(case_type or "").strip().lower(),
+        context_budget=(settings or get_settings()).draft_context_chars,
     )
 
     grouped: dict[str, list[tuple[CaseDocument, str]]] = defaultdict(list)

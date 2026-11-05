@@ -10,6 +10,8 @@
 | `check_e2e_ui.py` | браузер: два участника, вход по коду, смена кода, материалы | `requests`, `playwright` + Edge/Chrome |
 | `check_case_card.py` | номер и суд подставляются из документов | `paramiko`, SSH-ключ |
 | `collect_metrics.py` | выгрузка метрик теста в JSON | `paramiko`, SSH-ключ |
+| `ab_collect.py` | прогон фиксированных дел и метрики для A/B | `requests` |
+| `ab_compare.py` | сравнение двух прогонов A/B | — |
 
 ## Адреса и доступ
 

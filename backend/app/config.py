@@ -35,9 +35,16 @@ class EmbeddingProviderName(StrEnum):
 
 
 class QdrantMode(StrEnum):
-    """Режим Qdrant. На ноутбуке — memory, сервер нужен только на RTX 3050."""
+    """Режим Qdrant.
+
+    * `memory` — встроенный, живёт до перезапуска (тесты, MOCK);
+    * `local` — встроенный с файлом на диске: индекс переживает
+      перезапуск, отдельный сервер не нужен;
+    * `server` — внешний Qdrant по HTTP.
+    """
 
     MEMORY = "memory"
+    LOCAL = "local"
     SERVER = "server"
 
 
@@ -130,9 +137,21 @@ class Settings(BaseSettings):
     qdrant_mode: QdrantMode = QdrantMode.MEMORY
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
+    #: Каталог локального индекса (режим `local`). Относительный путь
+    #: считается от корня проекта, чтобы не зависеть от рабочего каталога.
+    qdrant_path: str = "data/qdrant"
     qdrant_collection_laws: str = "legal_laws"
     qdrant_collection_cases: str = "legal_cases"
     qdrant_collection_documents: str = "case_documents"
+
+    # ── База знаний по нормам ───────────────────────────────────────────
+    #: Подмешивать ли статьи кодекса в подсказку модели. По умолчанию
+    #: выключено: индекс должен быть построен, иначе генерация не должна
+    #: зависеть от его наличия.
+    rag_laws_enabled: bool = False
+    rag_laws_top_k: int = 5
+    #: Сколько знаков норм отдавать модели за один раздел.
+    rag_laws_context_chars: int = 1500
 
     # ── RAG (п.14, п.25) ───────────────────────────────────────────────
     chunk_size: int = 800
@@ -140,6 +159,18 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 10
     retrieval_candidates: int = 50
     rrf_k: int = 60
+
+    # ── Генерация проекта ───────────────────────────────────────────────
+    #: Предел ответа модели на раздел. 420 — для 1.5B на CPU: больше она
+    #: не держит, качество падает быстрее, чем растёт время. Для 7B
+    #: поднимается до 1 000–1 500 (см. docs/7b-tuning.md).
+    draft_max_tokens: int = 420
+    #: Вторая попытка с якорем: лимит выше, потому что первый ответ мог
+    #: оборваться на рассуждении.
+    draft_max_tokens_retry: int = 760
+    #: Сколько знаков сплошных текстов документов отдавать модели на
+    #: раздел. Привязано к num_ctx: 4 000 знаков ≈ 1 200 токенов.
+    draft_context_chars: int = 4000
 
     # ── Ограничения ресурсов (п.54) ─────────────────────────────────────
     max_upload_mb: int = 50

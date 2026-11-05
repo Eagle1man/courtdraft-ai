@@ -151,3 +151,10 @@ data/translated_injections.jsonl
 
 # РќР°СЂРµР·РєР° СЂРµР°Р»СЊРЅС‹С… РѕР±РµР·Р»РёС‡РµРЅРЅС‹С… Р°Р±Р·Р°С†РµРІ: Р»РѕРєР°Р»СЊРЅР°СЏ, РІ git РЅРµ РІС…РѕРґРёС‚.
 data/real_benign_fragments.jsonl
+
+# Тексты кодексов: официальный текст свободен, но конкретный PDF — чужое издание.
+# Скачивается скриптом build_law_index.py --download, в git не кладётся.
+backend/data/laws/sources/
+
+# Локальный векторный индекс (Qdrant в файловом режиме).
+data/qdrant/
