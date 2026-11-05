@@ -73,7 +73,13 @@ async def main() -> None:
             found = []
             for result in results:
                 match = _ARTICLE.search(result.embedding.filename or "")
-                found.append(match.group(1) if match else "")
+                article = match.group(1) if match else ""
+                # Совпадение номера статьи из другого кодекса — не попадание:
+                # «Статья 1» есть и в АПК, и в ГПК. Без этой проверки recall
+                # завышался бы тем сильнее, чем больше кодексов в индексе.
+                if result.embedding.document_id != row["code"]:
+                    article = ""
+                found.append(article)
             expected = row["article"]
             if found and found[0] == expected:
                 hits_at_1 += 1

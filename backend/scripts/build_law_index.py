@@ -27,7 +27,13 @@ import sys
 import urllib.request
 
 from app.config import get_settings
-from app.datasets.law_corpus import build_chunks
+from app.datasets.law_corpus import (
+    LawChunk,
+    articles_from_records,
+    articles_to_records,
+    build_chunks_from_articles,
+    parse_articles,
+)
 from app.embeddings import build_embedding_provider
 from app.rag.laws import index_law_chunks
 from app.rag.store import VectorStore
@@ -65,10 +71,60 @@ def _extract_text(path: pathlib.Path) -> str:
     return "\n".join(page.get_text() for page in document)
 
 
+def _read_jsonl(path: pathlib.Path) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    return records
+
+
+def _first_code(path: pathlib.Path) -> str:
+    records = _read_jsonl(path)
+    return str(records[0].get("code", "")) if records else ""
+
+
+def _from_jsonl(paths: list[pathlib.Path], *, code: str) -> tuple[list[LawChunk], int]:
+    """Собрать пассажи из выгрузок статей, а не из PDF.
+
+    Зачем: текст процессуальных кодексов берётся из HTML, где статья уже
+    выделена разметкой. Заставлять такой текст проходить через PDF-разбор
+    — значит искать заголовки там, где они и так известны.
+
+    Файлов может быть несколько (ГК, ГПК, АПК): пассажи каждого кодекса
+    помечаются своим названием, иначе в подсказке модели ссылка «Статья 1»
+    потеряет кодекс.
+    """
+    by_code: dict[str, list[dict[str, str]]] = {}
+    for path in paths:
+        for record in _read_jsonl(path):
+            record_code = str(record.get("code", "")) or code
+            if code and record_code != code:
+                continue
+            by_code.setdefault(record_code, []).append(record)
+
+    chunks: list[LawChunk] = []
+    total = 0
+    for record_code, records in by_code.items():
+        articles = articles_from_records(records)
+        chunks.extend(build_chunks_from_articles(articles, code=record_code))
+        total += sum(len(record.get("text", "")) for record in records)
+    return chunks, total
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pdf", type=pathlib.Path, default=DEFAULT_PDF)
-    parser.add_argument("--code", default="ГК РФ")
+    parser.add_argument(
+        "--jsonl",
+        type=pathlib.Path,
+        nargs="+",
+        default=None,
+        help="готовые статьи (JSONL от fetch_law_code) вместо PDF",
+    )
+    parser.add_argument("--code", default="")
     parser.add_argument("--download", action="store_true", help="скачать PDF, если нет")
     parser.add_argument("--dry-run", action="store_true", help="только разбор, без индексации")
     parser.add_argument(
@@ -77,24 +133,45 @@ def main() -> None:
         default=None,
         help="сохранить пассажи в JSON (удобно переносить на стенд)",
     )
+    parser.add_argument(
+        "--dump-articles",
+        type=pathlib.Path,
+        default=None,
+        help="сохранить разобранные статьи в JSONL (для сборки индекса на стенде)",
+    )
     args = parser.parse_args()
 
-    if not args.pdf.exists():
-        if args.download:
-            _download(args.pdf)
-        else:
-            raise SystemExit(
-                f"Нет файла {args.pdf}. Запустите с --download или укажите --pdf."
-            )
+    if args.jsonl is not None:
+        chunks, raw_chars = _from_jsonl(args.jsonl, code=args.code)
+        args.code = args.code or _first_code(args.jsonl[0])
+    else:
+        if not args.pdf.exists():
+            if args.download:
+                _download(args.pdf)
+            else:
+                raise SystemExit(
+                    f"Нет файла {args.pdf}. Запустите с --download или укажите --pdf."
+                )
+        text = _extract_text(args.pdf)
+        args.code = args.code or "ГК РФ"
+        articles = parse_articles(text, code=args.code)
+        chunks = build_chunks_from_articles(articles, code=args.code)
+        raw_chars = len(text)
 
-    text = _extract_text(args.pdf)
-    chunks = build_chunks(text, code=args.code)
+        if args.dump_articles is not None:
+            args.dump_articles.parent.mkdir(parents=True, exist_ok=True)
+            with args.dump_articles.open("w", encoding="utf-8") as handle:
+                for record in articles_to_records(articles, code=args.code):
+                    handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            print(f"статьи сохранены:  {args.dump_articles}")
+
     lengths = [len(chunk.text) for chunk in chunks]
 
-    print(f"кодекс:            {args.code}")
-    print(f"знаков в тексте:   {len(text)}")
+    codes = sorted({chunk.code for chunk in chunks}) or [args.code]
+    print(f"кодексов:          {len(codes)} ({', '.join(codes)})")
+    print(f"знаков в тексте:   {raw_chars}")
     print(f"пассажей:          {len(chunks)}")
-    print(f"статей:            {len({chunk.article for chunk in chunks})}")
+    print(f"статей:            {len({(chunk.code, chunk.article) for chunk in chunks})}")
     if lengths:
         print(f"медиана пассажа:   {statistics.median(lengths):.0f}")
     parts = sorted({chunk.part for chunk in chunks if chunk.part})

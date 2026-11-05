@@ -198,6 +198,27 @@ def chunk_article(
     return result
 
 
+def build_chunks_from_articles(
+    articles: list[LawArticle],
+    *,
+    code: str = "ГК РФ",
+    max_chars: int = 1200,
+    overlap: int = 150,
+) -> list[LawChunk]:
+    """Нарезать на пассажи уже разобранные статьи.
+
+    Отдельно от `build_chunks`: текст кодекса можно получить не только
+    из PDF, но и из выгрузки статей (JSONL). Разбор и нарезка не должны
+    зависеть от того, откуда взялся текст.
+    """
+    chunks: list[LawChunk] = []
+    for article in articles:
+        chunks.extend(
+            chunk_article(article, code=code, max_chars=max_chars, overlap=overlap)
+        )
+    return chunks
+
+
 def build_chunks(
     raw_text: str,
     *,
@@ -206,9 +227,44 @@ def build_chunks(
     overlap: int = 150,
 ) -> list[LawChunk]:
     """Разобрать кодекс и нарезать все статьи на пассажи."""
-    chunks: list[LawChunk] = []
-    for article in parse_articles(raw_text, code=code):
-        chunks.extend(
-            chunk_article(article, code=code, max_chars=max_chars, overlap=overlap)
+    return build_chunks_from_articles(
+        parse_articles(raw_text, code=code),
+        code=code,
+        max_chars=max_chars,
+        overlap=overlap,
+    )
+
+
+def articles_to_records(articles: list[LawArticle], *, code: str) -> list[dict[str, str]]:
+    """Статьи в записи JSONL: кодекс, номер, название, текст."""
+    return [
+        {
+            "code": code,
+            "article": article.number,
+            "title": article.title,
+            "part": article.part,
+            "text": article.text,
+        }
+        for article in articles
+    ]
+
+
+def articles_from_records(
+    records: list[dict[str, str]], *, code: str = "ГК РФ"
+) -> list[LawArticle]:
+    """Записи JSONL обратно в статьи.
+
+    Кодекс в записи важнее аргумента: в одном файле могут лежать статьи
+    разных кодексов, и подменять их одним значением нельзя.
+    """
+    articles: list[LawArticle] = []
+    for record in records:
+        articles.append(
+            LawArticle(
+                number=str(record.get("article", "")),
+                title=str(record.get("title", "")),
+                text=str(record.get("text", "")),
+                part=str(record.get("part", "")),
+            )
         )
-    return chunks
+    return articles
