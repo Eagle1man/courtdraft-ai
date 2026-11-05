@@ -36,6 +36,19 @@ DEFAULT_EVAL = (
 
 _ARTICLE = re.compile(r"Статья\s+(\d+(?:\.\d+)?)")
 
+#: Часть кодекса в идентификаторе набора: «ГК РФ ч.2».
+_PART_SUFFIX = re.compile(r"\s+ч\.\s*\d+\s*$")
+
+
+def base_code(value: str) -> str:
+    """Название кодекса без номера части.
+
+    В наборе из триплетов кодекс записан как «ГК РФ ч.2», а в индексе —
+    «ГК РФ». Сравнивать их напрямую значит забраковать каждое попадание:
+    на первом прогоне это дало recall 0,000 при работающем поиске.
+    """
+    return _PART_SUFFIX.sub("", (value or "").strip())
+
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -77,7 +90,7 @@ async def main() -> None:
                 # Совпадение номера статьи из другого кодекса — не попадание:
                 # «Статья 1» есть и в АПК, и в ГПК. Без этой проверки recall
                 # завышался бы тем сильнее, чем больше кодексов в индексе.
-                if result.embedding.document_id != row["code"]:
+                if base_code(result.embedding.document_id) != base_code(row["code"]):
                     article = ""
                 found.append(article)
             expected = row["article"]

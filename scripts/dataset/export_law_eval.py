@@ -37,6 +37,9 @@ OUTPUT = (
 
 _ARTICLE = re.compile(r"Статья\s+(\d+(?:\.\d+)?)")
 
+#: Часть кодекса в идентификаторе триплета: «ГК РФ ч.2».
+_PART_SUFFIX = re.compile(r"\s+ч\.\s*\d+\s*$")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -63,7 +66,11 @@ def main() -> None:
                 continue
             record = {
                 "query": item["query"],
-                "code": parts[0],
+                # Кодекс без номера части: в индексе статьи лежат как
+                # «ГК РФ», а в триплетах — «ГК РФ ч.2». Если оставить как
+                # есть, сравнение с индексом всегда будет неудачным.
+                "code": _PART_SUFFIX.sub("", parts[0]).strip(),
+                "code_part": parts[0],
                 "article": match.group(1),
                 "part": parts[2] if len(parts) > 2 else "",
                 "query_type": item.get("query_type", ""),

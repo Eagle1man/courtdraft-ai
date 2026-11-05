@@ -180,3 +180,24 @@ class TestArticleRecords:
         assert total > 0
         assert chunks
         assert chunks[0].code == "ГПК РФ"
+
+
+class TestEvaluationCodes:
+    """Сверка кодекса при замере: «ГК РФ ч.2» и «ГК РФ» — один кодекс.
+
+    На первом прогоне сравнение было построчным, все попадания считались
+    чужими, и замер показал recall 0,000 при работающем поиске.
+    """
+
+    def test_part_suffix_removed(self) -> None:
+        from scripts.eval_law_index import base_code
+
+        assert base_code("ГК РФ ч.2") == "ГК РФ"
+        assert base_code("ГК РФ ч. 4") == "ГК РФ"
+        assert base_code("ГПК РФ") == "ГПК РФ"
+        assert base_code("") == ""
+
+    def test_matches_index_name(self) -> None:
+        from scripts.eval_law_index import base_code
+
+        assert base_code("ГК РФ ч.2") == base_code("ГК РФ")
