@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import StrEnum
 
 from app.extraction.schemas import (
@@ -198,12 +199,17 @@ def detect_contradictions(registry: CaseRegistry) -> list[Contradiction]:
     for amount in registry.amounts:
         amounts.setdefault(amount.kind, []).append(amount)
     for kind, items in amounts.items():
-        values = {str(item.value) for item in items}
-        if len(values) > 1:
+        # Сравнение по числу, а не по записи: «1000» и «1000,00» — одна
+        # и та же сумма. Иначе реестр сообщал бы о противоречии там, где
+        # его нет, и блокировал вывод без причины.
+        unique: dict[Decimal, str] = {}
+        for item in items:
+            unique.setdefault(item.value, str(item.value))
+        if len(unique) > 1:
             contradictions.append(
                 Contradiction(
                     kind=f"amount:{kind}",
-                    values=sorted(values),
+                    values=sorted(unique.values()),
                     sources=[item.source for item in items if item.source is not None],
                     blocking=True,
                 )

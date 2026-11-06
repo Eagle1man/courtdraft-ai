@@ -322,6 +322,7 @@ def build_info(cfg: Settings | None = None) -> ApiInfoResponse:
         llm_provider=build_llm_provider(settings).name,
         embedding_provider=build_embedding_provider(settings).name,
         ollama_enabled=settings.ollama_enabled,
+        features={"facts": settings.facts_enabled},
         disclaimer=DISCLAIMER,
     )
 

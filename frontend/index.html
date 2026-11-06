@@ -13,7 +13,7 @@
   работает». При смене версии приложения метка меняется здесь же —
   иначе статику придётся чистить вручную у каждого зрителя.
 -->
-<link rel="stylesheet" href="styles.css?v=0.3.1">
+<link rel="stylesheet" href="styles.css?v=0.3.2">
 </head>
 <body>
 
@@ -146,6 +146,14 @@
           <ul class="docs" id="doc-list">
             <li class="muted">Дело не выбрано</li>
           </ul>
+
+          <button class="btn full" id="btn-facts" disabled
+                  title="Извлечь факты из материалов и проверить цитаты по тексту документов">
+            Проверить факты
+          </button>
+          <p class="muted small" id="facts-hint">
+            Суммы, даты, участники и требования — с цитатой из документа.
+          </p>
         </div>
       </section>
     </div>
@@ -204,6 +212,16 @@
       <details class="details-box" id="sources" hidden>
         <summary>Источники, использованные в проекте</summary>
         <ul id="source-list"></ul>
+      </details>
+
+      <!-- Реестр фактов: что извлечено из материалов и чем это
+           подтверждено. Показывается до проекта — это его основание. -->
+      <details class="details-box" id="facts" hidden>
+        <summary>Факты и источники (<span id="facts-count">0</span>)
+          <span class="chip amber" id="facts-status" hidden></span>
+        </summary>
+        <div class="facts-meta" id="facts-meta"></div>
+        <div id="facts-body"></div>
       </details>
 
       <details class="details-box" id="versions" hidden>
@@ -308,6 +326,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=0.6.7"></script>
+<script src="app.js?v=0.6.8"></script>
 </body>
 </html>

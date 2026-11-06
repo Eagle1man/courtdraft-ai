@@ -49,6 +49,7 @@ from app.schemas.draft import (
 )
 from app.services.case_service import db, session_scope
 from app.services.draft_service import CaseNotReadyError, DraftService
+from app.services.job_state import persist_job_state as job_state_persist
 from app.services.jobs import JobState, jobs
 from app.verification.contracts import DocumentStatus, from_legacy_status
 
@@ -230,19 +231,8 @@ def _draft_out(
 
 
 async def persist_job_state(job_id: uuid.UUID, **fields: object) -> None:
-    """Сохранить состояние задания в базе, не ломая генерацию.
-
-    Реестр в памяти — источник быстрых ответов, база — то, что переживает
-    перезапуск. Сбой записи не должен ронять саму генерацию: проект уже
-    сформирован, а состояние можно перечитать.
-    """
-    if not db.available:
-        return
-    try:
-        async with session_scope(db.factory) as session:
-            await JobRepository(session).update(job_id, **fields)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Не удалось сохранить состояние задания %s: %s", job_id, exc)
+    """Совместимость: реализация в `app.services.job_state`."""
+    await job_state_persist(job_id, **fields)
 
 
 async def run_generation(

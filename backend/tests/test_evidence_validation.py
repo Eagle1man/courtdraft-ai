@@ -165,6 +165,16 @@ class TestContradictions:
 
         assert detect_contradictions(registry) == []
 
+    def test_same_amount_in_different_notation_is_not_a_conflict(self) -> None:
+        registry = _registry(
+            amounts=[
+                CaseAmount(kind="principal", value=Decimal("1000")),
+                CaseAmount(kind="principal", value=Decimal("1000.00")),
+            ]
+        )
+
+        assert detect_contradictions(registry) == []
+
     def test_different_dates_are_not_blocking(self) -> None:
         registry = _registry(
             dates=[

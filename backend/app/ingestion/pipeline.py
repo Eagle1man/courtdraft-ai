@@ -30,6 +30,7 @@ from app.ingestion.extract import (
     guess_document_type,
 )
 from app.models.entities import CaseDocument, DocumentChunk
+from app.rag.shared import get_store
 from app.rag.store import CollectionName, VectorStore
 from app.storage.case_files import StorageError, save_original
 
@@ -367,7 +368,12 @@ async def _index_chunks(
         for i, chunk in enumerate(chunks[: len(vectors)])
     ]
 
-    vector_store = store or VectorStore.from_settings(settings)
+    # Клиент обязателен общий на процесс (app.rag.shared): файловый
+    # Qdrant нельзя открыть дважды — второй экземпляр падает с ошибкой
+    # «already accessed by another instance». Именно здесь из-за этого
+    # загрузки документов отваливались 500-ми: новый клиент на каждый
+    # прогон при живом общем.
+    vector_store = store or get_store(settings)
     written = vector_store.upsert(collection, embeddings_out)
 
     if written == 0:
@@ -397,7 +403,8 @@ async def reindex_case(
     documents = DocumentRepository(session)
     rows = await documents.list_for_case(case_id)
 
-    vector_store = store or VectorStore.from_settings(cfg)
+    # Тот же общий клиент: см. комментарий в индексации документа.
+    vector_store = store or get_store(cfg)
     provider = embeddings or get_embedding_provider()
 
     # Старое удаляем целиком: иначе останутся векторы от прежних

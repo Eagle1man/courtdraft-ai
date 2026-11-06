@@ -17,6 +17,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Protocol
 
 from app.extraction.deterministic import extract_amounts
@@ -520,3 +521,46 @@ async def _extract_by_categories(
     return ExtractionRun(
         registry=registry, status=status, attempts=calls, errors=errors
     )
+
+
+def merge_registries(registries: Sequence[CaseRegistry]) -> CaseRegistry:
+    """Собрать один реестр из реестров отдельных документов.
+
+    Один и тот же участник и одна и та же сумма встречаются в нескольких
+    документах дела (истец — в иске и в договоре). Дубли схлопываются по
+    смыслу, а не по строке: роль и наименование для участников, вид и
+    значение для сумм и дат. Противоречия при этом не теряются — их ищет
+    `detect_contradictions` уже по объединённому реестру.
+    """
+    merged = CaseRegistry()
+    seen_participants: set[tuple[str, str]] = set()
+    seen_amounts: set[tuple[str, Decimal]] = set()
+    seen_dates: set[tuple[str, str]] = set()
+
+    for registry in registries:
+        if not merged.case_number and registry.case_number:
+            merged.case_number = registry.case_number
+        for participant in registry.participants:
+            key = (participant.role, " ".join(participant.name.lower().split()))
+            if key not in seen_participants:
+                seen_participants.add(key)
+                merged.participants.append(participant)
+        for amount in registry.amounts:
+            # Ключ — само число, а не его запись: 1000 и 1000.00 в базе
+            # и в документах означают одну сумму.
+            key = (amount.kind, amount.value)
+            if key not in seen_amounts:
+                seen_amounts.add(key)
+                merged.amounts.append(amount)
+        for item in registry.dates:
+            key = (item.kind, item.value.isoformat())
+            if key not in seen_dates:
+                seen_dates.add(key)
+                merged.dates.append(item)
+        merged.claims.extend(registry.claims)
+        merged.facts.extend(registry.facts)
+        merged.missing.extend(registry.missing)
+
+    if any(item.status is not ExtractionStatus.OK for item in registries):
+        merged.status = ExtractionStatus.NEEDS_REVIEW
+    return merged

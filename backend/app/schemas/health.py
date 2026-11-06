@@ -56,5 +56,9 @@ class ApiInfoResponse(BaseModel):
     llm_provider: str
     embedding_provider: str
     ollama_enabled: bool
+    # Какие необязательные возможности включены на этом стенде. Клиент
+    # по этому полю решает, показывать ли кнопку, а не по пробному
+    # запросу «а вдруг сработает».
+    features: dict[str, bool] = Field(default_factory=dict)
     # Явное предупреждение о статусе проекта (п.70).
     disclaimer: str

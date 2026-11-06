@@ -28,6 +28,7 @@ from app.models.entities import (
     Draft,
     DraftVersion,
     EvidenceItem,
+    FactRegistry,
     Feedback,
     JobRecord,
     Verification,
@@ -388,9 +389,45 @@ class EvidenceRepository:
         return list(result.scalars().all())
 
 
+class FactRegistryRepository:
+    """Снимки реестра фактов (п.7, п.8).
+
+    История снимков сохраняется: если материалы или модель изменились,
+    старый реестр остаётся как был — по нему можно объяснить, что видел
+    пользователь в прошлый раз. Наружу отдаётся последний.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, record: FactRegistry) -> FactRegistry:
+        self._session.add(record)
+        await self._session.flush()
+        return record
+
+    async def latest_for_case(self, case_id: uuid.UUID) -> FactRegistry | None:
+        result = await self._session.execute(
+            select(FactRegistry)
+            .where(FactRegistry.case_id == case_id)
+            .order_by(FactRegistry.created_at.desc(), FactRegistry.id.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
+
+    async def list_for_case(
+        self, case_id: uuid.UUID, *, limit: int = 20
+    ) -> list[FactRegistry]:
+        result = await self._session.execute(
+            select(FactRegistry)
+            .where(FactRegistry.case_id == case_id)
+            .order_by(FactRegistry.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+
 class AuditRepository:
     """Аудит действий (п.46)."""
-
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -601,8 +638,9 @@ class JobRepository:
         case_id: uuid.UUID,
         state: str,
         created_at: datetime | None = None,
+        kind: str = "draft",
     ) -> JobRecord:
-        record = JobRecord(id=job_id, case_id=case_id, state=state)
+        record = JobRecord(id=job_id, case_id=case_id, state=state, kind=kind)
         if created_at is not None:
             record.created_at = created_at
         self._session.add(record)
@@ -639,7 +677,9 @@ class JobRepository:
         )
         return int(result.rowcount or 0)
 
-    async def claim_interrupted(self, *, max_attempts: int = 1) -> list[InterruptedJob]:
+    async def claim_interrupted(
+        self, *, max_attempts: int = 1, kind: str = "draft"
+    ) -> list[InterruptedJob]:
         """Забрать незавершённые задания на повтор после перезапуска.
 
         Возвращает те, что ещё не исчерпали попытки. Задания, прерывавшиеся
@@ -652,6 +692,7 @@ class JobRepository:
         result = await self._session.execute(
             select(JobRecord)
             .where(JobRecord.state.in_(("PENDING", "RUNNING")))
+            .where(JobRecord.kind == kind)
             .order_by(JobRecord.created_at)
         )
         records = list(result.scalars())

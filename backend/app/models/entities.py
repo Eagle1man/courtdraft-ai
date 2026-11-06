@@ -481,6 +481,44 @@ class Verification(TimestampMixin, Base):
         return f"<Verification v{self.draft_version} status={self.status}>"
 
 
+class FactRegistry(TimestampMixin, Base):
+    """Реестр фактов дела, собранный из материалов (п.7, п.8).
+
+    Хранится снимком, а не пересчитывается на каждый запрос: извлечение
+    идёт через модель и занимает минуты, а показывать пользователю нужно
+    то же самое, что он видел в прошлый раз.
+
+    `registry` — полный JSON реестра (участники, суммы, даты, требования,
+    факты, противоречия, пробелы). `summary` — счётчики для списков:
+    это кэш, источник истины всё равно в `registry`.
+    """
+
+    __tablename__ = "case_fact_registries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="needs_review", index=True
+    )
+    #: Модель, которой собран реестр: без неё нельзя сравнить прогоны.
+    model: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    documents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_sec: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    #: Полный JSON реестра. Имя `payload`, а не `registry`: `registry`
+    #: зарезервировано Declarative-классом SQLAlchemy.
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    summary: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+
+    def __repr__(self) -> str:
+        return f"<FactRegistry case={self.case_id} status={self.status}>"
+
+
 # ── Знание (п.15–п.17) ───────────────────────────────────────────────────
 
 
@@ -699,6 +737,13 @@ class JobRecord(TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     error: Mapped[str] = mapped_column(String(400), default="", nullable=False)
+    #: Вид задания: draft (формирование проекта) или facts (реестр фактов).
+    #: Нужен при возобновлении после перезапуска: иначе задание извлечения
+    #: фактов подхватывалось бы как формирование проекта и запускало
+    #: генерацию, которую никто не просил.
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default="draft", index=True
+    )
     result_draft_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     result_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     verification_status: Mapped[str] = mapped_column(

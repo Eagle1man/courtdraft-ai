@@ -20,7 +20,7 @@ const POLL_INTERVAL = 3000;
 // Версия сборки интерфейса. Должна совпадать с ?v= в index.html:
 // браузер кэширует app.js по этому адресу, и при неизменном ?v он
 // продолжает показывать старый файл, даже когда на сервере новый.
-const UI_BUILD = "0.6.7";
+const UI_BUILD = "0.6.8";
 
 // Код участника живёт в памяти вкладки (sessionStorage), а не в браузере
 // навсегда. Компьютер в аудитории общий: перезагрузка страницы код
@@ -146,6 +146,8 @@ const state = {
   documents: [],
   draft: null,
   jobTimer: null,
+  factsTimer: null,
+  features: {},
   loadingCaseId: null,
   loadSeq: 0,
   loadRetries: 0,
@@ -592,6 +594,13 @@ async function selectCase(caseId) {
   show($("btn-download"), false);
   show($("btn-feedback"), true);
   show($("editor"), false);
+  show($("facts"), false);
+  $("facts-count").textContent = "0";
+  $("facts-body").innerHTML = "";
+  $("facts-hint").textContent =
+    "Суммы, даты, участники и требования — с цитатой из документа.";
+  $("btn-facts").hidden = !factsEnabled();
+  $("btn-facts").disabled = true;
 
   await loadCases();
   if (seq !== state.loadSeq) return;
@@ -603,6 +612,10 @@ async function selectCase(caseId) {
   if (seq !== state.loadSeq) return;
   if (state.loadingCaseId !== caseId || state.currentCase !== caseId) return;
   $("btn-generate").disabled = !(state.currentCase && state.documents.length > 0);
+  updateFactsButton();
+  await loadFacts();
+  if (seq !== state.loadSeq) return;
+  if (state.loadingCaseId !== caseId || state.currentCase !== caseId) return;
   renderSteps();
 }
 
@@ -724,6 +737,7 @@ async function loadDocuments() {
   }
 
   updateDocsLabel();
+  updateFactsButton();
 
   if (!state.documents.length) {
     list.innerHTML =
@@ -1634,12 +1648,317 @@ $("btn-feedback").onclick = openFeedback;
 $("feedback-close").onclick = () => show($("feedback-modal"), false);
 $("fb-submit").onclick = submitFeedback;
 
+/* ── Реестр фактов (этапы 2–3 ТЗ) ─────────────────────────────── */
+
+const FACT_STATUS_TEXT = {
+  verified: "цитата найдена",
+  source_matched: "цитата после нормализации",
+  extracted: "извлечён",
+  unsupported: "цитата не найдена",
+  conflicted: "противоречие",
+  needs_review: "требует проверки",
+};
+
+const FACT_PARTY_TEXT = {
+  plaintiff: "истец",
+  defendant: "ответчик",
+  court: "суд",
+  other: "",
+};
+
+const AMOUNT_KIND_TEXT = {
+  claim: "цена иска",
+  principal: "основной долг",
+  penalty: "пени, неустойка",
+  interest: "проценты",
+  paid: "оплачено",
+  debt: "задолженность",
+  costs: "судебные расходы",
+  total: "итого",
+  other: "",
+};
+
+const DATE_KIND_TEXT = {
+  contract: "договор",
+  due: "срок исполнения",
+  event: "событие",
+  payment: "платёж",
+  filing: "обращение в суд",
+  other: "",
+};
+
+/* Возможность на стенде определяется настройкой FACTS_ENABLED: если
+   она выключена, показывать кнопку и блок бессмысленно. Статус читается
+   один раз при загрузке из /api/info, а не подбирается щупом. */
+function factsEnabled() {
+  return state.features.facts === true;
+}
+
+async function loadFeatures() {
+  try {
+    const info = await api("/api/info");
+    state.features = info.features || {};
+  } catch {
+    state.features = {};
+  }
+  applyFactsVisibility();
+}
+
+function applyFactsVisibility() {
+  const on = factsEnabled();
+  $("btn-facts").hidden = !on;
+  $("facts-hint").hidden = !on;
+  if (!on) {
+    show($("facts"), false);
+    return;
+  }
+  $("btn-facts").disabled = !(state.currentCase && state.documents.length > 0);
+}
+
+function updateFactsButton() {
+  if (factsEnabled()) {
+    $("btn-facts").disabled =
+      !(state.currentCase && state.documents.length > 0) ||
+      state.factsTimer !== null;
+  }
+}
+
+async function loadFacts() {
+  if (!state.currentCase || !factsEnabled()) return;
+  const caseId = state.currentCase;
+
+  try {
+    const data = await api(`/api/cases/${caseId}/facts`);
+    if (state.currentCase !== caseId) return;
+    renderFacts(data);
+  } catch (error) {
+    if (state.currentCase !== caseId) return;
+    // 404 — реестр ещё не собирали: это нормальное состояние, а не ошибка.
+    show($("facts"), false);
+  }
+}
+
+async function runFacts() {
+  if (!state.currentCase) {
+    showAlert("Сначала выберите дело.");
+    return;
+  }
+  if (!state.documents.length) {
+    showAlert("Сначала добавьте материалы дела.");
+    return;
+  }
+
+  const button = $("btn-facts");
+  button.disabled = true;
+  $("facts-hint").textContent = "Извлечение фактов… на процессоре это минуты.";
+
+  try {
+    const job = await api(`/api/cases/${state.currentCase}/facts`, {
+      method: "POST",
+    });
+    pollFactsJob(job.job_id, state.currentCase);
+  } catch (error) {
+    applyFactsVisibility();
+    $("facts-hint").textContent = `Не удалось запустить: ${error.message}`;
+  }
+}
+
+function pollFactsJob(jobId, caseId) {
+  clearInterval(state.factsTimer);
+
+  const startedAt = Date.now();
+  state.factsTimer = setInterval(async () => {
+    if (state.currentCase !== caseId) {
+      stopFactsPolling();
+      return;
+    }
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    $("facts-hint").textContent = `Извлечение фактов… ${seconds} с`;
+
+    try {
+      const job = await api(`/api/jobs/${jobId}`);
+      if (state.currentCase !== caseId) return;
+
+      if (job.state === "DONE") {
+        stopFactsPolling();
+        $("facts-hint").textContent = "";
+        await loadFacts();
+      } else if (job.state === "FAILED") {
+        stopFactsPolling();
+        $("facts-hint").textContent = `Не получилось: ${humanError(job.error)}`;
+      }
+    } catch (error) {
+      if (state.currentCase !== caseId) return;
+      // Обрыв сети не значит, что извлечение пропало: даём задачу
+      // работать дальше, а сообщение — честное.
+      $("facts-hint").textContent = `Связь с программой мерцает: ${error.message}`;
+    }
+  }, POLL_INTERVAL);
+}
+
+function stopFactsPolling() {
+  clearInterval(state.factsTimer);
+  state.factsTimer = null;
+  updateFactsButton();
+}
+
+function chip(text, tone) {
+  const cls = tone ? `chip ${tone}` : "chip";
+  return `<span class="${cls}">${escapeHtml(text)}</span>`;
+}
+
+function factStatusChip(status) {
+  const text = FACT_STATUS_TEXT[status] || label(FACT_STATUS_TEXT, status);
+  const tone =
+    status === "verified"
+      ? "green"
+      : status === "unsupported" || status === "conflicted"
+        ? "red"
+        : "amber";
+  return chip(text, tone);
+}
+
+function documentName(documents, id) {
+  const doc = (documents || []).find((item) => item.id === id);
+  return doc ? doc.filename : id;
+}
+
+/* Русские подписи для видов: справочник отдаёт не всё, что можно
+   выбрать, поэтому неучтённые значения показываются как есть. */
+function kindText(map, kind) {
+  return map[kind] || kind || "";
+}
+
+function renderFacts(data) {
+  const registry = data.registry || {};
+  const summary = data.summary || {};
+
+  const total =
+    (registry.participants || []).length +
+    (registry.amounts || []).length +
+    (registry.dates || []).length +
+    (registry.claims || []).length +
+    (registry.facts || []).length;
+  $("facts-count").textContent = String(total);
+
+  const quotes = summary.quotes || {};
+  const meta =
+    `модель ${escapeHtml(data.model || "—")} · документов ${data.documents} · ` +
+    `${Math.round(data.duration_sec || 0)} с · ` +
+    `цитаты: точных ${quotes.exact || 0}, после нормализации ${quotes.normalized || 0}, ` +
+    `не найдено ${quotes.absent || 0}`;
+  $("facts-meta").textContent = meta;
+
+  const blocks = [];
+
+  const contradictions = registry.contradictions || [];
+  if (contradictions.length) {
+    const items = contradictions
+      .map((item) => {
+        const values = (item.values || []).map((value) => escapeHtml(String(value)));
+        return `<li>${chip(item.blocking ? "блокирует" : "требует оценки", item.blocking ? "red" : "amber")} <span>${escapeHtml(item.kind)}: ${values.join(" / ")}</span></li>`;
+      })
+      .join("");
+    blocks.push(`<p class="facts-title">Расхождения</p><ul class="facts-list">${items}</ul>`);
+  }
+
+  const participants = registry.participants || [];
+  if (participants.length) {
+    const items = participants
+      .map((item) => {
+        const role = label({ plaintiff: "истец", defendant: "ответчик", third_party: "третье лицо", representative: "представитель" }, item.role);
+        const inn = item.inn ? ` · ИНН ${escapeHtml(item.inn)}` : "";
+        return `<li><span>${escapeHtml(item.name)}</span>${inn} ${chip(role, "grey")}</li>`;
+      })
+      .join("");
+    blocks.push(`<p class="facts-title">Участники</p><ul class="facts-list">${items}</ul>`);
+  }
+
+  const amounts = registry.amounts || [];
+  if (amounts.length) {
+    const items = amounts
+      .map((item) => `<li>${chip(kindText(AMOUNT_KIND_TEXT, item.kind), "teal")} <span>${escapeHtml(formatNum(item.value))} руб.</span>${quoteLine(item)}</li>`)
+      .join("");
+    blocks.push(`<p class="facts-title">Суммы</p><ul class="facts-list">${items}</ul>`);
+  }
+
+  const dates = registry.dates || [];
+  if (dates.length) {
+    const items = dates
+      .map((item) => `<li>${chip(kindText(DATE_KIND_TEXT, item.kind), "teal")} <span>${escapeHtml(String(item.value))}</span>${quoteLine(item)}</li>`)
+      .join("");
+    blocks.push(`<p class="facts-title">Даты</p><ul class="facts-list">${items}</ul>`);
+  }
+
+  const claims = registry.claims || [];
+  if (claims.length) {
+    const items = claims
+      .map((item) => {
+        const money = item.amount != null ? ` · ${escapeHtml(formatNum(item.amount))} руб.` : "";
+        return `<li><span>${escapeHtml(item.subject)}</span>${money}${quoteLine(item)}</li>`;
+      })
+      .join("");
+    blocks.push(`<p class="facts-title">Требования</p><ul class="facts-list">${items}</ul>`);
+  }
+
+  const facts = registry.facts || [];
+  if (facts.length) {
+    const items = facts
+      .map((item) => {
+        const party = FACT_PARTY_TEXT[item.party]
+          ? ` ${chip(FACT_PARTY_TEXT[item.party], "bronze")}`
+          : "";
+        const statusChip_ = factStatusChip(item.status);
+        return `<li><span>${escapeHtml(item.value)}</span>${party} ${statusChip_}${quoteLine(item)}</li>`;
+      })
+      .join("");
+    blocks.push(`<p class="facts-title">Факты</p><ul class="facts-list">${items}</ul>`);
+  }
+
+  const missing = registry.missing || [];
+  if (missing.length) {
+    const items = missing
+      .map((item) => `<li>${chip(item.blocking ? "блокирует вывод" : "не блокирует", item.blocking ? "red" : "grey")} <span>${escapeHtml(item.reason)}</span></li>`)
+      .join("");
+    blocks.push(`<p class="facts-title">Чего нет в материалах</p><ul class="facts-list">${items}</ul>`);
+  }
+
+  $("facts-body").innerHTML = blocks.length
+    ? blocks.join("")
+    : '<p class="muted small">Фактов не нашлось. Пустой реестр — тоже результат: он говорит, что модель не смогла ничего надёжно извлечь.</p>';
+
+  if (data.status !== "ok") {
+    $("facts-status").textContent = "требует проверки";
+    $("facts-status").className = "chip amber";
+    $("facts-status").hidden = false;
+  } else {
+    $("facts-status").hidden = true;
+  }
+
+  show($("facts"), true);
+}
+
+/* Цитата с местом в документе. Документ показывается названием, а не
+   UUID: пользователь ищет источник в списке материалов, а не в базе. */
+function quoteLine(item) {
+  const source = item && item.source;
+  if (!source || !source.document_id) return "";
+  const doc = documentName(state.documents, source.document_id);
+  const where = source.page ? `, с. ${source.page}` : "";
+  return ` <span class="muted small">(${escapeHtml(doc)}${where})</span>`;
+}
+
 /* ── Запуск ───────────────────────────────────────────────────── */
+
+$("btn-facts").onclick = runFacts;
 
 (async function start() {
   renderStudentBadge();
   renderSteps();
   await loadHealth();
+  // Возможности стенда читаются до списка дел: кнопка «Проверить
+  // факты» есть только там, где включена настройка FACTS_ENABLED.
+  await loadFeatures();
 
   // Без кода — только запрос кода: список дел в этом состоянии показать
   // нельзя, сервер отдал бы дела всех участников.
