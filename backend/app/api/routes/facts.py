@@ -74,6 +74,18 @@ async def start_facts(
         )
 
     model = cfg.facts_model or cfg.ollama_model
+
+    # Как и с проектом: повторное нажатие не ставит второе извлечение —
+    # оно занимает процессор на минуты, и дубли только удлиняют очередь.
+    active = await JobRepository(session).find_active(case_id, kind="facts")
+    if active is not None:
+        return FactsJobOut(
+            job_id=active.id,
+            case_id=case_id,
+            status=active.state,
+            started_at=active.created_at,
+        )
+
     job = await jobs.create(case_id)
     await JobRepository(session).create(
         job_id=job.id,

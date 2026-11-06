@@ -16,11 +16,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+
+from sqlalchemy.exc import IntegrityError
 
 from app.config import Settings
 from app.db.repositories import CaseRepository, DocumentRepository, FactRegistryRepository
@@ -38,6 +41,16 @@ logger = logging.getLogger(__name__)
 
 class CaseHasNoDocumentsError(RuntimeError):
     """В деле нет материалов: извлекать нечего."""
+
+
+class CaseDeletedError(RuntimeError):
+    """Дело удалили, пока шло извлечение. Сохранять снимок не в что."""
+
+
+#: Извлечение идёт на том же процессоре, что и формирование проекта:
+#: у модели один экземпляр, и параллельные прогоны не ускоряют, а
+#: сваливают машину в своп. Поэтому один слот, очередь даёт реестр jobs.
+_FACTS_SLOTS = asyncio.Semaphore(1)
 
 
 @dataclass(frozen=True)
@@ -206,17 +219,29 @@ async def run_fact_job(
     проекта: фоновая задача не должна зависеть от того, что успели
     поменять в `.env` после постановки задачи.
     """
-    from app.llm import build_llm_provider
+    # Слот берётся до перевода задания в RUNNING: пока ждём, оно честно
+    # остаётся PENDING, и интерфейс показывает ожидание, а не работу.
+    async with _FACTS_SLOTS:
+        await jobs.update(job_id, state=JobState.RUNNING, started_at=datetime.now(UTC))
+        await persist_job_state(
+            job_id, state=JobState.RUNNING.value, started_at=datetime.now(UTC)
+        )
+        await _run(job_id, case_id, cfg, model, time.perf_counter())
 
-    await jobs.update(job_id, state=JobState.RUNNING, started_at=datetime.now(UTC))
-    await persist_job_state(
-        job_id, state=JobState.RUNNING.value, started_at=datetime.now(UTC)
-    )
 
-    started = time.perf_counter()
+async def _run(
+    job_id: uuid.UUID,
+    case_id: uuid.UUID,
+    cfg: Settings,
+    model: str,
+    started: float,
+) -> None:
+    """Реальное извлечение — под слотом."""
     try:
         async with session_scope(db.factory) as session:
             data = await load_case_data(session, case_id)
+
+        from app.llm import build_llm_provider
 
         provider = build_llm_provider(cfg, model=model)
         registry, quotes, documents = await extract_case_registry(
@@ -226,22 +251,29 @@ async def run_fact_job(
             max_chars=cfg.facts_max_chars,
         )
 
-        async with session_scope(db.factory) as session:
-            await save_registry(
-                session,
-                case_id=case_id,
-                registry=registry,
-                quotes=quotes,
-                model=model,
-                documents=documents,
-                duration_sec=time.perf_counter() - started,
-            )
+        try:
+            async with session_scope(db.factory) as session:
+                await save_registry(
+                    session,
+                    case_id=case_id,
+                    registry=registry,
+                    quotes=quotes,
+                    model=model,
+                    documents=documents,
+                    duration_sec=time.perf_counter() - started,
+                )
+        except IntegrityError as exc:
+            # Дело удалили, пока извлечение работало: сохранять снимок
+            # не в что. Это не сбой системы, а состояние данных.
+            raise CaseDeletedError(
+                "Дело было удалено во время извлечения фактов."
+            ) from exc
 
         await jobs.update(job_id, state=JobState.DONE, finished_at=datetime.now(UTC))
         await persist_job_state(
             job_id, state=JobState.DONE.value, finished_at=datetime.now(UTC)
         )
-    except CaseHasNoDocumentsError as exc:
+    except (CaseHasNoDocumentsError, CaseDeletedError) as exc:
         await jobs.update(
             job_id,
             state=JobState.FAILED,

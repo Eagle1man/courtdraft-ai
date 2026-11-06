@@ -365,6 +365,20 @@ async def generate_draft(
         )
 
     cfg = request.app.state.settings
+
+    # Повторное нажатие не создаёт второе задание: на процессоре проект
+    # пишется минуты, и пять заданий на одно дело — это очередь, в
+    # которой последний студент ждёт полчаса. Возвращаем уже идущее.
+    if not wait:
+        active = await JobRepository(session).find_active(case_id, kind="draft")
+        if active is not None:
+            return DraftJobOut(
+                job_id=active.id,
+                case_id=case_id,
+                status=active.state,
+                started_at=active.created_at,
+            )
+
     # Модель закрепляется до постановки задачи: иначе два первых дела
     # могли бы одновременно получить сильную модель сверх квоты.
     assignment = await ModelRouter(session, cfg).assign(case_id)

@@ -657,6 +657,58 @@ class JobRepository:
     async def get(self, job_id: uuid.UUID) -> JobRecord | None:
         return await self._session.get(JobRecord, job_id)
 
+    async def find_active(
+        self, case_id: uuid.UUID, *, kind: str = "draft"
+    ) -> JobRecord | None:
+        """Незавершённое задание этого дела.
+
+        Нужно, чтобы повторное нажатие «Сформировать проект» не ставило
+        второе задание: модель на процессоре пишет проект минуты, и
+        каждый лишний клик отнимает время у остальных. Пять заданий на
+        одно дело — это ровно та очередь, где студент ждёт полчаса.
+        """
+        result = await self._session.execute(
+            select(JobRecord)
+            .where(JobRecord.case_id == case_id)
+            .where(JobRecord.kind == kind)
+            .where(JobRecord.state.in_(("PENDING", "RUNNING")))
+            .order_by(JobRecord.created_at)
+            .limit(1)
+        )
+        return result.scalars().first()
+
+    async def cancel_pending(self, *, kind: str, error: str) -> int:
+        """Снять ожидающие задания вида, оставив по одному на дело.
+
+        Возвращает число снятых. Если по делу уже идёт задание, все
+        ожидающие по нему снимаются: второе всё равно встанет в очередь
+        и отнимет время у других дел.
+        """
+        running = await self._session.execute(
+            select(JobRecord.case_id)
+            .where(JobRecord.kind == kind)
+            .where(JobRecord.state == "RUNNING")
+        )
+        seen: set[uuid.UUID] = set(running.scalars().all())
+
+        rows = await self._session.execute(
+            select(JobRecord)
+            .where(JobRecord.kind == kind)
+            .where(JobRecord.state == "PENDING")
+            .order_by(JobRecord.created_at)
+        )
+        cancelled = 0
+        for record in rows.scalars():
+            if record.case_id in seen:
+                record.state = "FAILED"
+                record.finished_at = datetime.now(UTC)
+                record.error = error
+                cancelled += 1
+            else:
+                seen.add(record.case_id)
+        await self._session.flush()
+        return cancelled
+
     async def mark_interrupted(self) -> int:
         """Пометить незавершённые задания прерванными при старте службы.
 
