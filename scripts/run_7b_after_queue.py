@@ -34,8 +34,14 @@ STOP = f"{ROOT}/STOP_7B"
 REPORT = f"{ROOT}/data/7b_report.json"
 
 WAIT_IDLE_LIMIT_H = 6
-CASE_TIMEOUT_MIN = 180
+CASE_TIMEOUT_MIN = 240
 MAX_CONSECUTIVE_FAILURES = 3
+#: Сколько дел гонять на 7B. На этом процессоре один проект идёт часы,
+#: и полтора десятка дел не успеют до утра — для сравнения хватает трёх.
+MAX_CASES = int(os.environ.get("MAX_7B_CASES", "3"))
+#: Список дел, снятый до начала ожидания. Нужен, потому что к моменту
+#: переключения очередь уже пуста: задания выполняются по одному.
+CASES_FILE = f"{ROOT}/data/7b_cases.txt"
 
 
 def log(message: str) -> None:
@@ -115,6 +121,18 @@ def set_env(key: str, value: str) -> None:
         handle.writelines(lines)
 
 
+def _env_value(key: str) -> str:
+    """Текущее значение настройки из .env (без библиотеки настроек)."""
+    try:
+        with open(ENV, encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip()
+    except FileNotFoundError:
+        return ""
+    return ""
+
+
 def restart_backend() -> bool:
     """Перезапустить службу так же, как это делает деплой: kill -> systemd."""
     pid = subprocess.run(
@@ -190,9 +208,15 @@ def main() -> None:
         return
 
     cases = pending_cases()
-    log(f"в очереди сейчас {len(cases)} дел — их и прогоним на 7B")
+    if not cases and os.path.exists(CASES_FILE):
+        with open(CASES_FILE, encoding="utf-8") as handle:
+            cases = [line.strip() for line in handle if line.strip()]
+        log(f"очередь пуста, берём сохранённый список: {len(cases)} дел")
+
+    cases = cases[:MAX_CASES]
+    log(f"на 7B пойдут {len(cases)} дел (лимит {MAX_CASES})")
     if not cases:
-        log("очередь пуста, сравнивать нечего — выходим")
+        log("дел для сравнения нет — выходим")
         return
 
     log("ждём, пока очередь опустеет")
@@ -200,14 +224,20 @@ def main() -> None:
         log("очередь не опустела за отведённое время — выходим без переключения")
         return
 
-    log("включаем 7B: MODEL_ROUTING_ENABLED=false, OLLAMA_MODEL=qwen2.5:7b")
-    set_env("MODEL_ROUTING_ENABLED", "false")
-    set_env("OLLAMA_MODEL", "qwen2.5:7b")
-    if not restart_backend():
-        log("ОШИБКА: служба не поднялась после переключения — возвращаем настройки")
-        set_env("MODEL_ROUTING_ENABLED", "true")
-        restart_backend()
-        return
+    already = _env_value("MODEL_ROUTING_ENABLED") == "false" and (
+        _env_value("OLLAMA_MODEL") == "qwen2.5:7b"
+    )
+    if already:
+        log("стенд уже на 7B — перезапуск не нужен")
+    else:
+        log("включаем 7B: MODEL_ROUTING_ENABLED=false, OLLAMA_MODEL=qwen2.5:7b")
+        set_env("MODEL_ROUTING_ENABLED", "false")
+        set_env("OLLAMA_MODEL", "qwen2.5:7b")
+        if not restart_backend():
+            log("ОШИБКА: служба не поднялась после переключения — возвращаем настройки")
+            set_env("MODEL_ROUTING_ENABLED", "true")
+            restart_backend()
+            return
 
     results = []
     failures = 0
