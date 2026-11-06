@@ -709,6 +709,22 @@ class JobRepository:
         await self._session.flush()
         return cancelled
 
+    async def fail_orphaned(self, *, kind: str, error: str) -> int:
+        """Закрыть незавершённые задания вида, которые не возобновляются.
+
+        Нужно для извлечения фактов: после перезапуска службы оно не
+        продолжается (результата нет, а работа занимает процессор), но
+        задание в базе осталось бы «выполняется», и интерфейс опрашивал
+        бы его бесконечно.
+        """
+        result = await self._session.execute(
+            update(JobRecord)
+            .where(JobRecord.kind == kind)
+            .where(JobRecord.state.in_(("PENDING", "RUNNING")))
+            .values(state="FAILED", finished_at=datetime.now(UTC), error=error)
+        )
+        return int(result.rowcount or 0)
+
     async def mark_interrupted(self) -> int:
         """Пометить незавершённые задания прерванными при старте службы.
 
