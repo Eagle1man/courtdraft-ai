@@ -11,12 +11,16 @@
 from __future__ import annotations
 
 import pathlib
+import shutil
 import subprocess
 import sys
 import traceback
 
 WORK = pathlib.Path("/kaggle/working")
-LLAMA = WORK / "llama.cpp"
+# llama.cpp — инструмент, а не результат: держим его вне /kaggle/working,
+# иначе тысячи файлов репозитория попадают в вывод ядра и в скачивание.
+_SCRATCH = pathlib.Path("/kaggle/temp") if pathlib.Path("/kaggle/temp").is_dir() else WORK
+LLAMA = _SCRATCH / "llama.cpp"
 BASE_MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 OUTFILE = WORK / "courtdraft-7b-lora.gguf"
 
@@ -67,6 +71,7 @@ def main() -> None:
     reader = GGUFReader(str(OUTFILE))
     print("тензоров в GGUF:", len(reader.tensors), flush=True)
     print("размер, МБ:", round(OUTFILE.stat().st_size / 1024 / 1024, 1), flush=True)
+    shutil.rmtree(LLAMA, ignore_errors=True)
     print("готово:", OUTFILE, flush=True)
 
 
