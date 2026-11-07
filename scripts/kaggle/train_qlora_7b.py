@@ -8,8 +8,12 @@
   * учим только на ответе: у токенов промпта labels = -100;
   * при обрезке сохраняется конец ответа, а не начало промпта.
 
-Оценка времени: ~500 шагов, на T4 это 1–2 часа. Ошибки пишутся в
-`error.txt` в выводе ядра: лог через CLI приходит не всегда.
+Время проверено на живом прогоне 07.11.2026: 84,7 с на шаг, то есть
+3 эпохи (516 шагов) — это 12 ч 45 мин и обрыв по лимиту Kaggle (12 ч)
+на 93 %, без сохранённого адаптера. Поэтому 2 эпохи (344 шага ≈ 8,5 ч)
+и сохранение чекпоинтов каждые 50 шагов: обрыв больше не оставляет
+пустой вывод. Ошибки пишутся в `error.txt` в выводе ядра: лог через
+CLI приходит не всегда.
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ from transformers import (
 
 MODEL = "Qwen/Qwen2.5-7B-Instruct"
 MAX_SEQ = 2048
-EPOCHS = 3.0
+EPOCHS = 2.0
 LR = 1e-4
 BATCH = 1
 GRAD_ACCUM = 8
@@ -169,8 +173,10 @@ def main() -> None:
         "logging_steps": 10,
         "eval_strategy": "steps",
         "evaluation_strategy": "steps",
-        "eval_steps": 40,
-        "save_strategy": "no",
+        "eval_steps": 100,
+        "save_strategy": "steps",
+        "save_steps": 50,
+        "save_total_limit": 1,
         "fp16": True,
         "optim": "adamw_8bit",
         "weight_decay": 0.01,
