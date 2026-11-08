@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Обзор проекта — CourtDraft AI</title>
+<meta name="description" content="Короткий обзор CourtDraft AI: что сделано, как устроен конвейер и демо-результаты.">
+<link rel="stylesheet" href="assets/styles.css">
+<style>
+  .demo-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 16px 0; }
+  .card { border: 1px solid var(--line, #e8ecea); border-radius: 12px; padding: 16px; background: var(--paper, #fff); }
+  .card h3 { margin: 0 0 8px; font-size: 1rem; }
+  .muted { color: var(--ink-faint, #68747f); font-size: .92rem; }
+  .kpi { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+  .kpi span { background: var(--paper-alt, #f2f4f3); border: 1px solid var(--line, #e8ecea); border-radius: 999px; padding: 4px 10px; font-size: .9rem; }
+  .pipe { list-style: none; padding: 0; margin: 12px 0; counter-reset: step; }
+  .pipe li { counter-increment: step; display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px dashed var(--line, #e8ecea); }
+  .pipe li::before { content: counter(step); flex: 0 0 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--accent-soft, #e4f1f0); color: var(--accent, #007b7f); font-weight: 600; font-size: .85rem; }
+  .ok { color: var(--ok, #1a7f45); font-weight: 600; }
+  .warn { color: var(--warn, #96650b); font-weight: 600; }
+  .mono { font-family: var(--mono, Consolas, monospace); font-size: .88rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line, #e8ecea); }
+  th { color: var(--ink-faint, #68747f); font-weight: 600; }
+  .note { border-left: 4px solid var(--warn-line, #ebd8ab); background: var(--warn-soft, #faf0db); padding: 10px 12px; border-radius: 8px; margin: 14px 0; }
+</style>
+</head>
+<body>
+<main id="main" style="max-width: 980px; margin: 0 auto; padding: 24px 16px 48px;">
+  <p><a href="index.html">← На главную</a> · <a href="demo/">Демо</a></p>
+
+  <h1>CourtDraft AI — обзор</h1>
+  <p class="muted">Локальная система подготовки <strong>проектов</strong> судебных актов по материалам дела. Система не выносит решений — проект проверяет и утверждает человек. Дата обзора: 08.11.2026.</p>
+
+  <div class="note"><strong>Важно:</strong> это обзорный материал. Никакие данные реальных дел в репозитории и на этой странице не публикуются. Примеры ниже — синтетические.</div>
+
+  <h2>Что сделано</h2>
+  <div class="demo-grid">
+    <div class="card">
+      <h3>Реестр фактов</h3>
+      <p>Из материалов извлекаются участники, суммы, даты и требования. Суммы разбираются детерминированно; цитаты проверяются по тексту источника.</p>
+      <div class="kpi"><span>цитаты: exact / absent</span><span>противоречия</span><span>needs_review</span></div>
+    </div>
+    <div class="card">
+      <h3>Надёжность стенда</h3>
+      <p>Одно активное задание на дело, слот извлечения = 1, дубли отменяются. Зависшие задания закрываются с причиной. Исправлены 500 при загрузке (общий клиент Qdrant).</p>
+      <div class="kpi"><span>1 319 тестов</span><span>ruff чисто</span></div>
+    </div>
+    <div class="card">
+      <h3>Модель 7B (эксперимент)</h3>
+      <p>QLoRA для Qwen2.5-7B-Instruct обучена на Kaggle; адаптер упакован в GGUF (LoRA, 80,8 МБ) для применения к базе через Ollama.</p>
+      <div class="kpi"><span>eval_loss 0,6797</span><span>8 ч 02 мин</span><span>GGUF v3</span></div>
+    </div>
+  </div>
+
+  <h2>Конвейер (упрощённо)</h2>
+  <ol class="pipe">
+    <li><div><strong>Загрузка материалов</strong><div class="muted">Документы дела → разбор текста и таблиц DOCX.</div></div></li>
+    <li><div><strong>Индексация и поиск</strong><div class="muted">Фрагменты + поиск по смыслу и по точным совпадениям; привязка к источнику.</div></div></li>
+    <li><div><strong>Извлечение фактов</strong><div class="muted">Участники, суммы, даты, требования → реестр фактов (по категориям, с проверкой цитат).</div></div></li>
+    <li><div><strong>Подготовка проекта</strong><div class="muted">Пакет доказательств → черновик разделов → автоматическая проверка замечаний.</div></div></li>
+    <li><div><strong>Проверка человеком</strong><div class="muted">Специалист читает проект, видит источники и замечания, вносит правки и принимает решение.</div></div></li>
+  </ol>
+
+  <h2>Демо (синтетический пример)</h2>
+  <p class="muted">Ниже — иллюстрация того, что показывает система. Цифры и имена вымышлены.</p>
+
+  <div class="demo-grid">
+    <div class="card">
+      <h3>Реестр фактов — пример вывода</h3>
+      <table>
+        <thead><tr><th>Категория</th><th>Значение</th><th>Цитата</th></tr></thead>
+        <tbody>
+          <tr><td>Участник</td><td>Истец: ООО «Пример»</td><td class="ok">exact</td></tr>
+          <tr><td>Участник</td><td>Ответчик: АО «Образец»</td><td class="ok">exact</td></tr>
+          <tr><td>Сумма</td><td>1 256 850,00 ₽ (долг)</td><td class="ok">exact</td></tr>
+          <tr><td>Дата</td><td>15.03.2025 (договор)</td><td class="ok">exact</td></tr>
+          <tr><td>Требование</td><td>Взыскать задолженность</td><td class="warn">needs review</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Статус: <span class="warn">требует проверки</span> — один пункт не подтверждён цитатой дословно.</p>
+    </div>
+
+    <div class="card">
+      <h3>Обучение 7B — результат</h3>
+      <table>
+        <thead><tr><th>Метрика</th><th>Значение</th></tr></thead>
+        <tbody>
+          <tr><td>База</td><td class="mono">Qwen2.5-7B-Instruct (QLoRA 4-бит)</td></tr>
+          <tr><td>Шаги / эпохи</td><td>344 / 2,0</td></tr>
+          <tr><td>train_loss</td><td>0,7055</td></tr>
+          <tr><td>eval_loss (финал)</td><td><strong>0,6797</strong></td></tr>
+          <tr><td>Артефакт</td><td>LoRA-GGUF 80,8 МБ (v3, 392 тензора)</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Loss — не качество проекта акта. Вывод о пользе 7B даст сравнение дефектов (<span class="mono">INCOMPLETE</span>, <span class="mono">UNSUPPORTED_CLAIM</span>) с 1.5B на одних делах.</p>
+    </div>
+  </div>
+
+  <h2>Ограничения</h2>
+  <ul>
+    <li>Проект — <strong>не решение суда</strong>; итог утверждает человек.</li>
+    <li>Развёртывание 7B на стенде и сравнение с 1.5B выполняются при доступе к сети кампуса.</li>
+    <li>Нет gold-разметки — метрики точности извлечения фактов (P/R/F1) пока не измерены.</li>
+  </ul>
+
+  <p class="muted">Подробности: <span class="mono">docs/report-2026-11-08.md</span>. Репозиторий: локальная ветка, без публикации.</p>
+</main>
+</body>
+</html>
