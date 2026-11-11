@@ -2,64 +2,101 @@
 
 - Дата: 2026-11-11
 - Ветка: `work/QD-UI`
-- Коммит: `165776a`
+- Коммит до починки: `165776a`
 - Python: 3.14.3 (проект рассчитан на >=3.12)
 - Тег: `baseline-2026-11-11` (локальный, не запушен)
 - Незакоммиченное на старте: `docs/vm-remote-access.md` (чужая работа, не трогалась)
 
-## pytest
+## Первый замер и его причина
 
-Полный прогон:
-
-```text
-248 failed, 1081 passed, 6 warnings, 23 errors in 48.87s
-```
-
-Первые упавшие тесты:
-
-- `backend/tests/test_agents.py::TestVerification::test_clean_draft_passes`
-- `backend/tests/test_api_archived_cases.py::TestArchivedCases::test_hidden_case_missing_from_list`
-- `backend/tests/test_api_cases.py::TestCreateCase::test_create_returns_201`
-- `backend/tests/test_api_health.py::TestHealth::test_health_returns_200` (ERROR)
-- `backend/tests/test_database.py::TestSchema::test_all_tables_created`
-
-Что проверено отдельно:
-
-- `test_api_health.py::TestHealth::test_health_returns_200` — **проходит** в одиночку.
-- `test_database.py::TestSchema::test_all_tables_created` — **проходит** в одиночку.
-- `test_api_cases.py` — **55 passed** в одиночку.
-- `test_agents.py` — **1 failed** в одиночку (`test_clean_draft_passes`).
-- `test_agents.py + test_api_archived_cases.py` — **1 failed** (тот же), остальные проходят.
-
-Вывод: есть как минимум один реальный красный тест (`test_clean_draft_passes`) и зависимость полного прогона от порядка тестов. Это состояние baseline, а не следствие правок T0: в T0 менялся только этот файл и локальный тег.
-
-## ruff
+Первый полный прогон выполнялся из корня репозитория:
 
 ```text
-All checks passed!
+cd D:\courtdraft-ai
+backend\.venv\Scripts\python.exe -m pytest -q
 ```
+
+Результат: `248 failed, 1081 passed, 23 errors`.
+
+Этот результат **не был состоянием кода**. Настройки pytest лежат в
+`backend/pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+```
+
+При запуске из корня без аргументов pytest не находит этот файл, поэтому
+`asyncio_mode = auto` не применяется. Асинхронные тесты падают с
+`async def functions are not natively supported`, а незакрытые
+соединения и циклы событий дают каскад из 23 errors и сотен
+последующих падений. Это выглядело как зависимость от порядка тестов.
+
+Правильный запуск — из каталога `backend`:
+
+```powershell
+cd D:\courtdraft-ai\backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+## Реальный дефект, найденный при разборе
+
+`test_agents.py::TestVerification::test_clean_draft_passes` падал и при
+правильном запуске. Причина — в `verify_draft`:
+
+```python
+registry = LawRegistry.load(settings.laws_dir if settings else Path("data/laws"))
+```
+
+Путь `data/laws` был относительным: он зависел от текущего каталога.
+В корне репозитория лежит пустой `data/laws` (только `.gitkeep`), а
+действующая база законодательства — в `backend/data/laws`
+(`gpk.json`, `gkk.json`, `nk.json`). Поэтому ст. 56 ГПК считалась
+отсутствующей, и чистый проект получал `LAW_NOT_FOUND`.
+
+Исправление: база всегда загружается из настроек, а не из текущего каталога.
+
+```python
+registry = LawRegistry.load((settings or get_settings()).laws_dir)
+```
+
+Правила проверки не ослаблялись, тесты не переписывались.
 
 ## mypy
 
+Исходно: `Found 39 errors in 7 files (checked 110 source files)`.
+
+Что исправлено:
+
+- `extraction/fact_extractor.py` — разные значения в циклах получили разные
+  имена (`amount_value`, `date_value`, `claim_amount`, `fact_value`,
+  `participant_key`, `amount_key`, `date_key`); протоколы `ChunkLike` и
+  `JsonProvider` типизированы, `CATEGORY_PROMPTS` — `type[BaseModel]`.
+- `extraction/schemas.py` — роль участника вынесена в `ParticipantRole`,
+  `normalize_role` возвращает этот тип.
+- `api/routes/cases.py` — результат `_ensure_case_visible` присваивается
+  обратно в `case`; функция уже возвращает `Case` или бросает 404.
+- `validation/evidence.py` — общий список источников типизирован объединением
+  моделей; словари сумм и дат получили конкретные типы элементов.
+- `db/repositories.py` — результат `UPDATE` приведён к `CursorResult[Any]`
+  перед чтением `rowcount`.
+- `services/fact_service.py` — сессии аннотированы `AsyncSession`.
+- `ingestion/extract.py` — `Paragraph` и `Table` импортируются напрямую.
+- `datasets/court_decisions.py` — у `_find_heading` есть возвращаемый тип.
+
+## Итоговые проверки
+
 ```text
-Found 39 errors in 7 files (checked 110 source files)
+cd D:\courtdraft-ai\backend
+.\.venv\Scripts\python.exe -m pytest
+1352 passed in 80.58s (0:01:20)
+
+.\.venv\Scripts\python.exe -m ruff check app tests
+All checks passed!
+
+.\.venv\Scripts\python.exe -m mypy app
+Success: no issues found in 110 source files
 ```
 
-Основные файлы:
-
-- `app/extraction/fact_extractor.py` — 14 ошибок;
-- `app/api/routes/cases.py` — 11 ошибок;
-- `app/validation/evidence.py` — 4 ошибки;
-- `app/db/repositories.py` — 2 ошибки;
-- `app/services/fact_service.py` — 3 ошибки;
-- `app/datasets/court_decisions.py` — 1 ошибка;
-- `app/ingestion/extract.py` — 1 ошибка.
-
-## Решение T0
-
-Baseline **красный**: pytest и mypy не проходят. По плану T0 («если baseline уже красный — не чинить, а остановиться и показать человеку») T1 не начинается до решения человека:
-
-1. принять красный baseline как известное состояние и разрешить T1;
-2. или сначала отдельной задачей починить `test_clean_draft_passes` и изоляцию тестов, затем повторить T0.
-
-T0 не исправлял ни тесты, ни типы.
+Baseline зелёный. T1 можно начинать.

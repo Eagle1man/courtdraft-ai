@@ -394,6 +394,8 @@ def _extract_docx(data: bytes, limit: int) -> ExtractedDocument:
         import io
 
         import docx
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
     except ImportError as exc:  # pragma: no cover
         raise ExtractionError("python-docx не установлен") from exc
 
@@ -408,7 +410,7 @@ def _extract_docx(data: bytes, limit: int) -> ExtractedDocument:
     table_rows = 0
 
     for block in document.iter_inner_content():
-        if isinstance(block, docx.text.paragraph.Paragraph):
+        if isinstance(block, Paragraph):
             content = (block.text or "").strip()
             if not content:
                 parts.append("")
@@ -424,7 +426,7 @@ def _extract_docx(data: bytes, limit: int) -> ExtractedDocument:
             else:
                 parts.append(content)
             total += len(content)
-        elif isinstance(block, docx.table.Table):
+        elif isinstance(block, Table):
             tables += 1
             rows = len(block.rows)
             table_rows += rows

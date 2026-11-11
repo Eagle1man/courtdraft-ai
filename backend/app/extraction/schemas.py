@@ -23,6 +23,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+#: Роль участника в том виде, в каком её понимает система.
+ParticipantRole = Literal[
+    "plaintiff",
+    "defendant",
+    "third_party",
+    "representative",
+    "other",
+]
+
 #: Версия схемы. Хранится в реестре, чтобы старые записи можно было
 #: прочитать после изменения модели.
 SCHEMA_VERSION = "1.0"
@@ -131,13 +140,7 @@ class ExtractionPayload(BaseModel):
 
 
 class CaseParticipant(BaseModel):
-    role: Literal[
-        "plaintiff",
-        "defendant",
-        "third_party",
-        "representative",
-        "other",
-    ] = "other"
+    role: ParticipantRole = "other"
     name: str
     inn: str | None = None
     source: SourceRef | None = None
@@ -218,7 +221,7 @@ _MONTHS = {
     "декабр": 12,
 }
 
-_ROLE_MAP = {
+_ROLE_MAP: dict[str, ParticipantRole] = {
     "истец": "plaintiff",
     "истца": "plaintiff",
     "ответчик": "defendant",
@@ -288,7 +291,7 @@ def parse_date(raw: str) -> date | None:
     return None
 
 
-def normalize_role(raw: str) -> str:
+def normalize_role(raw: str) -> ParticipantRole:
     """Роль стороны из свободного текста модели."""
     text = (raw or "").strip().lower()
     for key, role in _ROLE_MAP.items():

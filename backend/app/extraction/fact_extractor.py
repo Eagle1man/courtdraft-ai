@@ -18,7 +18,9 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
+
+from pydantic import BaseModel
 
 from app.extraction.deterministic import extract_amounts
 from app.extraction.schemas import (
@@ -70,9 +72,14 @@ SYSTEM_PROMPT = """Ты — экстрактор фактов из матери�
 class ChunkLike(Protocol):
     """Минимум, который нужен от фрагмента документа."""
 
-    text: str
-    page: int | None
-    paragraph: int | None
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def page(self) -> int | None: ...
+
+    @property
+    def paragraph(self) -> int | None: ...
 
 
 class JsonProvider(Protocol):
@@ -81,8 +88,8 @@ class JsonProvider(Protocol):
     name: str
 
     async def generate_json(
-        self, request: LLMRequest, *, default: dict | None = None
-    ) -> dict: ...
+        self, request: LLMRequest, *, default: dict[str, Any] | None = None
+    ) -> dict[str, Any]: ...
 
 
 @dataclass
@@ -216,8 +223,8 @@ def build_registry(
         )
 
     for amount in payload.amounts:
-        value = parse_money(amount.value)
-        if value is None:
+        amount_value = parse_money(amount.value)
+        if amount_value is None:
             registry.missing.append(
                 MissingInformation(
                     field=f"amount:{amount.kind or 'unknown'}",
@@ -230,14 +237,14 @@ def build_registry(
         registry.amounts.append(
             CaseAmount(
                 kind=amount.kind or "other",
-                value=value,
+                value=amount_value,
                 source=_locate(amount.quote, chunks, document_id),
             )
         )
 
     for item in payload.dates:
-        value = parse_date(item.value)
-        if value is None:
+        date_value = parse_date(item.value)
+        if date_value is None:
             registry.missing.append(
                 MissingInformation(
                     field=f"date:{item.kind or 'unknown'}",
@@ -250,7 +257,7 @@ def build_registry(
         registry.dates.append(
             CaseDate(
                 kind=item.kind or "other",
-                value=value,
+                value=date_value,
                 raw=item.value,
                 source=_locate(item.quote, chunks, document_id),
             )
@@ -260,8 +267,8 @@ def build_registry(
         subject = " ".join(claim.subject.split())
         if not subject:
             continue
-        amount = parse_money(claim.amount) if claim.amount else None
-        if claim.amount and amount is None:
+        claim_amount = parse_money(claim.amount) if claim.amount else None
+        if claim.amount and claim_amount is None:
             registry.missing.append(
                 MissingInformation(
                     field="claim:amount",
@@ -273,14 +280,14 @@ def build_registry(
         registry.claims.append(
             CaseClaim(
                 subject=subject,
-                amount=amount,
+                amount=claim_amount,
                 source=_locate(claim.quote, chunks, document_id),
             )
         )
 
     for raw_fact in payload.facts:
-        value = " ".join(raw_fact.text.split())
-        if not value:
+        fact_value = " ".join(raw_fact.text.split())
+        if not fact_value:
             continue
         source = _locate(raw_fact.quote, chunks, document_id)
         # Факт без найденного источника не считается подтверждённым:
@@ -290,7 +297,7 @@ def build_registry(
             CaseFact(
                 fact_id=_fact_id(),
                 fact_type=raw_fact.category or "other",
-                value=value,
+                value=fact_value,
                 party=normalize_party(raw_fact.party),
                 source=source,
                 status=status,
@@ -395,7 +402,7 @@ async def extract_facts(
 
 #: Инструкции по категориям. Каждая — узкая задача: маленькой модели проще
 #: заполнить короткую схему, чем всю сразу.
-CATEGORY_PROMPTS: dict[str, tuple[str, type]] = {
+CATEGORY_PROMPTS: dict[str, tuple[str, type[BaseModel]]] = {
     "participants": (
         "Извлеки только участников дела: истца, ответчика, третьих лиц, "
         "представителей.\n"
@@ -446,7 +453,7 @@ async def _extract_by_categories(
     attempts: int,
 ) -> ExtractionRun:
     """По одному вызову на категорию, затем сборка общего реестра."""
-    merged: dict[str, list] = {
+    merged: dict[str, list[dict[str, Any]]] = {
         "participants": [],
         "amounts": [],
         "dates": [],
@@ -475,7 +482,7 @@ async def _extract_by_categories(
                 )
                 continue
 
-        answer: dict = {}
+        answer: dict[str, Any] = {}
         for attempt in range(1, max(1, attempts) + 1):
             calls += 1
             request = LLMRequest(
@@ -541,21 +548,24 @@ def merge_registries(registries: Sequence[CaseRegistry]) -> CaseRegistry:
         if not merged.case_number and registry.case_number:
             merged.case_number = registry.case_number
         for participant in registry.participants:
-            key = (participant.role, " ".join(participant.name.lower().split()))
-            if key not in seen_participants:
-                seen_participants.add(key)
+            participant_key = (
+                participant.role,
+                " ".join(participant.name.lower().split()),
+            )
+            if participant_key not in seen_participants:
+                seen_participants.add(participant_key)
                 merged.participants.append(participant)
         for amount in registry.amounts:
             # Ключ — само число, а не его запись: 1000 и 1000.00 в базе
             # и в документах означают одну сумму.
-            key = (amount.kind, amount.value)
-            if key not in seen_amounts:
-                seen_amounts.add(key)
+            amount_key = (amount.kind, amount.value)
+            if amount_key not in seen_amounts:
+                seen_amounts.add(amount_key)
                 merged.amounts.append(amount)
         for item in registry.dates:
-            key = (item.kind, item.value.isoformat())
-            if key not in seen_dates:
-                seen_dates.add(key)
+            date_key = (item.kind, item.value.isoformat())
+            if date_key not in seen_dates:
+                seen_dates.add(date_key)
                 merged.dates.append(item)
         merged.claims.extend(registry.claims)
         merged.facts.extend(registry.facts)

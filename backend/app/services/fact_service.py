@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.repositories import CaseRepository, DocumentRepository, FactRegistryRepository
@@ -79,7 +80,7 @@ class CaseData:
     documents: list[DocumentData]
 
 
-async def load_case_data(session, case_id: uuid.UUID) -> CaseData:
+async def load_case_data(session: AsyncSession, case_id: uuid.UUID) -> CaseData:
     """Прочитать дело и материалы в простые структуры.
 
     Вызывается внутри сессии. Возвращает копии, а не ORM-объекты: после
@@ -185,7 +186,7 @@ async def extract_case_registry(
 
 
 async def save_registry(
-    session,
+    session: AsyncSession,
     *,
     case_id: uuid.UUID,
     registry: CaseRegistry,

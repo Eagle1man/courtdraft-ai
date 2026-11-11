@@ -285,7 +285,7 @@ async def get_case(
     """GET /api/cases/{id} — одно дело."""
     service = CaseService(session)
     case = await service.get_case(case_id)
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
     return await _to_out(case, session)
@@ -306,7 +306,7 @@ async def update_case(
             case.category = payload.category
             await session.flush()
 
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
 
     await session.refresh(case)
     return await _to_out(case, session)
@@ -353,7 +353,7 @@ async def list_documents(
     """GET /api/cases/{id}/documents — документы дела (п.42)."""
     service = CaseService(session)
     case = await service.get_case(case_id)
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -379,7 +379,7 @@ async def get_document(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -417,7 +417,7 @@ async def upload_document(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -513,7 +513,7 @@ async def register_document(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -581,7 +581,7 @@ async def list_participants(
     """Участники дела (п.34)."""
     service = CaseService(session)
     case = await service.get_case(case_id)
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 
@@ -612,7 +612,7 @@ async def add_participant(
     """
     service = CaseService(session)
     case = await service.get_case(case_id)
-    _ensure_case_visible(case)
+    case = _ensure_case_visible(case)
     if student_code and case.student_code and case.student_code != student_code:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ к делу запрещён")
 

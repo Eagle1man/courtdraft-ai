@@ -46,7 +46,9 @@ _ESTABLISHED_LINE = re.compile(r"(?m)^\s*установил\b", re.IGNORECASE)
 _DECIDED_LINE = re.compile(r"(?m)^\s*решил\b", re.IGNORECASE)
 
 
-def _find_heading(text: str, upper: re.Pattern[str], line: re.Pattern[str]):
+def _find_heading(
+    text: str, upper: re.Pattern[str], line: re.Pattern[str]
+) -> re.Match[str] | None:
     """Найти заголовок: сначала заглавный, затем строчный в начале строки."""
     match = upper.search(text)
     return match or line.search(text)

@@ -21,12 +21,11 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 from app.agents.draft_agent import NEEDS_REVIEW, DraftResult
 from app.agents.evidence_pack import MONTHS, EvidenceItem, EvidencePack
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.drafting.operative import DEFAULT_LEGAL_BASIS
 from app.drafting.requirements import extract_requirements
 from app.drafting.section_quality import motivating_shortcoming
@@ -588,7 +587,7 @@ def verify_draft(
     # дела: суд ссылается на ст. 309 ГК, которой в иске нет, и требовать
     # её подтверждения материалами нельзя — так каждая верная ссылка
     # помечалась неподтверждённой.
-    registry = LawRegistry.load(settings.laws_dir if settings else Path("data/laws"))
+    registry = LawRegistry.load((settings or get_settings()).laws_dir)
 
     # Цена иска — сумма денежных требований. Нужна для расчёта
     # госпошлины: по НК РФ пошлина считается от неё, а не берётся из

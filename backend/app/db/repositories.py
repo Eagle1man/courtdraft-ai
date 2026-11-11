@@ -13,9 +13,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entities import (
@@ -717,11 +718,14 @@ class JobRepository:
         задание в базе осталось бы «выполняется», и интерфейс опрашивал
         бы его бесконечно.
         """
-        result = await self._session.execute(
-            update(JobRecord)
-            .where(JobRecord.kind == kind)
-            .where(JobRecord.state.in_(("PENDING", "RUNNING")))
-            .values(state="FAILED", finished_at=datetime.now(UTC), error=error)
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                update(JobRecord)
+                .where(JobRecord.kind == kind)
+                .where(JobRecord.state.in_(("PENDING", "RUNNING")))
+                .values(state="FAILED", finished_at=datetime.now(UTC), error=error)
+            ),
         )
         return int(result.rowcount or 0)
 
@@ -731,17 +735,20 @@ class JobRepository:
         Крайняя мера: применяется, когда повтор невозможен (возобновление
         выключено настройкой). Клиент видит причину, а не вечное «в очереди».
         """
-        result = await self._session.execute(
-            update(JobRecord)
-            .where(JobRecord.state.in_(("PENDING", "RUNNING")))
-            .values(
-                state="FAILED",
-                finished_at=datetime.now(UTC),
-                error=(
-                    "служба была перезапущена — задание прервано; "
-                    "запустите формирование проекта заново"
-                ),
-            )
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                update(JobRecord)
+                .where(JobRecord.state.in_(("PENDING", "RUNNING")))
+                .values(
+                    state="FAILED",
+                    finished_at=datetime.now(UTC),
+                    error=(
+                        "служба была перезапущена — задание прервано; "
+                        "запустите формирование проекта заново"
+                    ),
+                )
+            ),
         )
         return int(result.rowcount or 0)
 

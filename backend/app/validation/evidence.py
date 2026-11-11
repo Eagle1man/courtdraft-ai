@@ -21,6 +21,10 @@ from decimal import Decimal
 from enum import StrEnum
 
 from app.extraction.schemas import (
+    CaseAmount,
+    CaseClaim,
+    CaseDate,
+    CaseParticipant,
     CaseRegistry,
     Contradiction,
     ExtractionStatus,
@@ -168,7 +172,13 @@ def verify_registry(registry: CaseRegistry, texts: dict[str, str]) -> EvidenceRe
                 )
             )
 
-    for item in [*registry.participants, *registry.amounts, *registry.dates, *registry.claims]:
+    sourced_items: list[CaseParticipant | CaseAmount | CaseDate | CaseClaim] = [
+        *registry.participants,
+        *registry.amounts,
+        *registry.dates,
+        *registry.claims,
+    ]
+    for item in sourced_items:
         source = item.source
         if source is None or not source.quote:
             continue
@@ -195,7 +205,7 @@ def detect_contradictions(registry: CaseRegistry) -> list[Contradiction]:
     """
     contradictions: list[Contradiction] = []
 
-    amounts: dict[str, list] = {}
+    amounts: dict[str, list[CaseAmount]] = {}
     for amount in registry.amounts:
         amounts.setdefault(amount.kind, []).append(amount)
     for kind, items in amounts.items():
@@ -215,17 +225,21 @@ def detect_contradictions(registry: CaseRegistry) -> list[Contradiction]:
                 )
             )
 
-    dates: dict[str, list] = {}
-    for item in registry.dates:
-        dates.setdefault(item.kind, []).append(item)
-    for kind, items in dates.items():
-        values = {item.value.isoformat() for item in items}
+    dates: dict[str, list[CaseDate]] = {}
+    for date_entry in registry.dates:
+        dates.setdefault(date_entry.kind, []).append(date_entry)
+    for kind, date_items in dates.items():
+        values = {date_item.value.isoformat() for date_item in date_items}
         if len(values) > 1:
             contradictions.append(
                 Contradiction(
                     kind=f"date:{kind}",
                     values=sorted(values),
-                    sources=[item.source for item in items if item.source is not None],
+                    sources=[
+                        date_item.source
+                        for date_item in date_items
+                        if date_item.source is not None
+                    ],
                     blocking=False,
                 )
             )
