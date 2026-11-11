@@ -583,7 +583,7 @@ def _build_operative_section(section: dict[str, Any], pack: EvidencePack) -> Sec
     раздел отдельным абзацем, чтобы судья увидел, что часть
     требований осталась вне проекта решения.
     """
-    from app.drafting.operative import build_operative
+    from app.drafting.operative import REVIEW, build_operative
     from app.drafting.requirements import (
         extract_budget,
         extract_counter_claims,
@@ -591,11 +591,25 @@ def _build_operative_section(section: dict[str, Any], pack: EvidencePack) -> Sec
         extract_parties,
         extract_procedure,
         extract_requirements,
+        fill_missing_amounts,
     )
+    from app.verification.engine import _case_date
+    from app.verification.laws import state_fee
 
     money, others, unrecognised = extract_requirements(pack)
+    money = fill_missing_amounts(pack, money)
     counters = extract_counter_claims(pack)
     fee, costs = extract_fee_and_costs(pack)
+    # Если пошлина в материалах не названа, считаем её по ст. 333.19
+    # НК РФ на дату дела. Это детерминированный расчёт, а не выдумка:
+    # пустой пункт «размер не установлен» в резолюции хуже, чем
+    # расчётная сумма с пометкой о проверке.
+    fee_calculated = False
+    if fee is None and money:
+        claim_total = sum(float(item.amount or 0) for item in money)
+        if claim_total > 0:
+            fee = int(round(state_fee(claim_total, _case_date(pack.dates))))
+            fee_calculated = True
     parties = extract_parties(pack)
     procedure = extract_procedure(pack)
     budget = extract_budget(pack)
@@ -603,8 +617,40 @@ def _build_operative_section(section: dict[str, Any], pack: EvidencePack) -> Sec
         money, others, counter_claims=counters, fee_paid=fee,
         costs=costs, parties=parties, procedure=procedure, budget=budget,
     )
+    if fee_calculated:
+        result.gaps.append(
+            "госпошлина рассчитана по ст. 333.19 НК РФ на дату дела, "
+            "а не взята из квитанции — проверьте"
+        )
 
+    # Пошлина — не требование истца: её разбирает отдельный контур
+    # (extract_fee_and_costs). Остатки её суммы в «не разобрано» только
+    # пугают судью ложным конфликтом. Убираем заметки, где фигурирует
+    # сама пошлина или итог «долг + пошлина».
+    def _numeric_marker(value: int) -> str:
+        return f"{value:,}".replace(",", " ")
+
+    noisy: set[str] = set()
+    if fee is not None:
+        noisy.add(_numeric_marker(int(fee)))
+    claim_total = sum(
+        int(claim.amount) for claim in money if claim.amount is not None
+    )
+    if claim_total and fee is not None:
+        noisy.add(_numeric_marker(int(claim_total + int(fee))))
+    if noisy:
+        unrecognised = [
+            item
+            for item in unrecognised
+            if not any(marker in item for marker in noisy)
+        ]
     text = result.render()
+    # Пробелы и «требует проверки» живут в SectionDraft.gaps и в UI,
+    # а не в тексте судебного акта. Иначе судья видит в «РЕШИЛ» служебную
+    # фразу «не указана сумма…», хотя это техническая пометка.
+    review_suffix = f"\n\n{REVIEW}: "
+    if review_suffix in text:
+        text = text.split(review_suffix, 1)[0].rstrip()
 
     citations: list[str] = [claim.source for claim in money if claim.source]
     citations.extend(claim.source for claim in others if claim.source)

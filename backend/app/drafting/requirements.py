@@ -116,6 +116,19 @@ def _find_amount_with_kopecks(text: str) -> tuple[int, int] | None:
     копеек терял бы вторую часть — а именно она определяет итог
     взыскания, который предъявляют к исполнению.
     """
+    # «1 561,37 руб.» — десятичная запятая внутри суммы. Без этой
+    # ветки сумма распадалась: 1561 не находилась, а 37 считалась
+    # самостоятельным числом.
+    comma = re.search(
+        r"([\d][\d\s\u00a0\u2009\u202f]*)[.,]\s*(\d{1,2})\s*(?:руб|₽)",
+        text,
+        re.I,
+    )
+    if comma:
+        whole = _to_number(comma.group(1))
+        if whole is not None and whole > 0:
+            return whole, int(comma.group(2))
+
     with_kop = re.search(
         r"([\d][\d\s\u00a0\u2009\u202f]{2,})\s*(?:\((?:[^()\d]{3,120})\)\s*)?руб(?:лей|ля|ль|\.)?\s*"
         r"(\d{1,2})\s*коп",
@@ -246,6 +259,27 @@ def _claim_windows(
         starts = [m.start() for m in CLAIM_START.finditer(text)]
         for index, start in enumerate(starts):
             end = starts[index + 1] if index + 1 < len(starts) else len(text)
+            # Сумма часто стоит перед глаголом: «просит взыскать …
+            # 11 812 руб. 23 коп.». Если начать окно с «взыскать»,
+            # сумма останется за кадром, и резолюция получит null.
+            # Забираем предшествующий фрагмент, если в нём есть рубли.
+            prefix_start = max(0, start - 350)
+            prefix = text[prefix_start:start]
+            amount_match = re.search(
+                r"\d[\d\s\u00a0\u2009\u202f]*\s*(?:руб|₽)", prefix, re.I
+            )
+            chunk_has_amount = re.search(
+                r"\d[\d\s\u00a0\u2009\u202f]*\s*(?:руб|₽)",
+                text[start:end],
+                re.I,
+            )
+            if amount_match is not None and chunk_has_amount is None:
+                # Сумма стоит ПЕРЕД глаголом («просит взыскать …
+                # 11 812 руб.»), а в самом окне её нет. Только тогда
+                # расширяемся назад; иначе захватываем чужое требование
+                # из предыдущего предложения.
+                cut = prefix.rfind(". ", 0, amount_match.start())
+                start = prefix_start + (cut + 2 if cut >= 0 else 0)
             chunk = text[start : min(end, start + CLAIM_WINDOW)]
             if chunk.strip():
                 context = text[max(0, start - 200) : start]
@@ -327,15 +361,41 @@ def _shorten(text: str, limit: int = 200) -> str:
 
 
 def _fee_from(items: list[EvidenceItem]) -> int | None:
-    """Государственная пошлина из материалов дела."""
+    """Государственная пошлина из материалов дела.
+
+    Ищем сумму рядом со словом «пошлина», но не «на общую сумму»:
+    в протоколе встречается «долг и пошлина на общую сумму 46 940» —
+    это итог, а не пошлина. Приоритет у явного «пошлины в размере».
+    """
+    explicit: list[int] = []
+    fallback: list[int] = []
     for item in items:
-        for pattern in FEE_PATTERNS:
-            match = pattern.search(item.text)
-            if match:
-                value = _to_number(match.group(1))
-                if value and 100 < value < 1_000_000:
-                    return value
-    return None
+        for marker in re.finditer(r"пошлин\w*", item.text, re.I):
+            # Смотрим только вперёд от слова «пошлина»: сумма долга,
+            # стоящая перед ним, к пошлине не относится.
+            window = item.text[marker.end() : marker.end() + 180]
+            lower = window.lower()
+            if "общую сумму" in lower and "в размере" not in lower:
+                continue
+            search_from = 0
+            if "в размере" in lower:
+                # Сумма пошлины стоит ПОСЛЕ «в размере», а не любая
+                # сумма в окне: иначе «членские взносы 9 750» съедались
+                # как пошлина.
+                search_from = lower.index("в размере") + len("в размере")
+            found = _find_amount_with_kopecks(window[search_from:])
+            if found is None:
+                continue
+            value = found[0]
+            if value is None or not (100 < value < 1_000_000):
+                continue
+            if "в размере" in lower:
+                explicit.append(value)
+            else:
+                fallback.append(value)
+    if explicit:
+        return explicit[0]
+    return fallback[0] if fallback else None
 
 
 def _costs_from(items: list[EvidenceItem]) -> int | None:
@@ -403,7 +463,15 @@ def extract_requirements(
     #
     # Первая строка попадает в «claims», вторая — в «evidence»
     # (там есть слово «руб»), и без общего порядка сумма терялась.
-    for source, text, context in _claim_windows(_document_streams(pack)):
+    # Решение суда — не иск: «убытки» из мотивировки не должны
+    # становиться отдельным требованием. Суммы для уже найденных
+    # требований добираются из всех материалов в fill_missing_amounts.
+    claim_streams = [
+        (name, text)
+        for name, text in _document_streams(pack)
+        if "court_findings" not in name.lower()
+    ]
+    for source, text, context in _claim_windows(claim_streams):
         if _is_court_determination(context):
             # Это не требование истца, а определение суда («суд
             # считает необходимым взыскать …»). Сумма оттуда в
@@ -537,6 +605,14 @@ def extract_requirements(
             )
 
         basis_match = claim_basis_match(requirement_text)
+        basis_from_context = False
+        if basis_match is None:
+            # «…с иском о взыскании задолженности. Взыскать с
+            # ответчицы 2 293 руб.»: основание в предыдущей фразе,
+            # сумма — в этой. Без склейки сумма оставалась без
+            # основания, а основание — без суммы.
+            basis_match = claim_basis_match(context)
+            basis_from_context = basis_match is not None
         basis = basis_match[0] if basis_match is not None else None
         if basis is None:
             # Требование в долевой форме: «взыскать 1/3 часть от суммы
@@ -607,8 +683,10 @@ def extract_requirements(
         # («взыскать 1000 руб. в возмещение убытков»), остаётся первая
         # сумма окна.
         found = _find_amount_with_kopecks(requirement_text)
-        if basis_match is not None:
-            after_basis = _find_amount_with_kopecks(requirement_text[basis_match[1].end():])
+        if basis_match is not None and not basis_from_context:
+            after_basis = _find_amount_with_kopecks(
+                requirement_text[basis_match[1].end() :]
+            )
             if after_basis is not None:
                 found = after_basis
         whole, kopecks = found if found else (None, 0)
@@ -665,6 +743,67 @@ def extract_requirements(
     # требования. Раньше они попадали в список неразобранных и в
     # резолютивной части появлялся пункт «нет данных: установленные
     # обстоятельства», которого в иске не было.
+
+    # Если в исковых документах совсем не нашлось требования, пробуем
+    # судебный акт: в части дел сумма есть только там. Это запасной
+    # путь, а не основной — иначе «убытки» из мотивировки становятся
+    # отдельным требованием.
+    if not money:
+        court_streams = [
+            (name, text)
+            for name, text in _document_streams(pack)
+            if "court_findings" in name.lower()
+        ]
+        for source, text, context in _claim_windows(court_streams):
+            clause_result = _clause_claims(_without_fee_fragments(text))
+            for basis, whole, kopecks in clause_result.claims:
+                if basis not in NON_MONEY_BASES and basis not in money:
+                    money[basis] = MoneyClaim(
+                        amount=whole,
+                        kopecks=kopecks,
+                        basis=basis,
+                        source=source,
+                        outcome=Outcome.SATISFIED,
+                    )
+            if clause_result.claims:
+                continue
+            basis_match = claim_basis_match(text) or claim_basis_match(context)
+            found = _find_amount_with_kopecks(text)
+            if basis_match is not None and found is not None and found[0]:
+                basis = basis_match[0]
+                if basis not in NON_MONEY_BASES and basis not in money:
+                    money[basis] = MoneyClaim(
+                        amount=found[0],
+                        kopecks=found[1],
+                        basis=basis,
+                        source=source,
+                        outcome=Outcome.SATISFIED,
+                    )
+
+    # Последний запасной путь: требование есть, сумма в материалах есть,
+    # а основание не распознано. Показываем сумму с нейтральным
+    # основанием и пометкой, а не пустую резолютивную часть.
+    if not money:
+        for item in pack.items:
+            if item.source_document not in {"05_protocol.txt", "06_court_findings.txt"}:
+                continue
+            if not re.search(r"взыск\w+|возмест\w+|обяза\w+", item.text, re.I):
+                continue
+            found = _find_amount_with_kopecks(item.text)
+            if found is not None and found[0] and found[0] >= 100:
+                money["требования истца"] = MoneyClaim(
+                    amount=found[0],
+                    kopecks=found[1],
+                    basis="требования истца",
+                    source=item.source_document,
+                    outcome=Outcome.SATISFIED,
+                )
+                _add_note(
+                    unrecognised,
+                    "основание требования не распознано — сумма взята "
+                    f"из {item.source_document}, проверьте формулировку",
+                )
+                break
 
     # Исход отражается из материалов дела, если он там есть (см.
     # resolve_outcomes). Требования без исхода в материалах остаются
@@ -1401,6 +1540,11 @@ def _clause_claims(text: str) -> _ClauseResult:
     if not text:
         return _ClauseResult([], [], [])
     sentence = _SENTENCE_SPLIT.split(text)[0]
+    # «Взыскать 45 379 руб., в том числе основной долг 25 000,
+    # членские взносы 9 750…» — это состав одной суммы, а не четыре
+    # самостоятельных требования. Иначе резолюция складывала итог и
+    # его же слагаемые.
+    sentence = re.split(r"\bв\s+том\s+числе\b", sentence, maxsplit=1, flags=re.I)[0]
     claims: list[tuple[str, int, int]] = []
     blanks: list[str] = []
     conflicts: list[tuple[str, int, int, int, int]] = []
@@ -1409,7 +1553,11 @@ def _clause_claims(text: str) -> _ClauseResult:
     index = 0
     while index < len(clauses):
         clause = clauses[index]
-        if _is_fee_requirement(clause) or _NARRATION_MARKERS.search(clause):
+        if (
+            _is_fee_requirement(clause)
+            or "пошлин" in clause.lower()
+            or _NARRATION_MARKERS.search(clause)
+        ):
             index += 1
             continue
         basis = _clause_basis(clause)
@@ -1487,6 +1635,47 @@ def extract_parties(pack: EvidencePack) -> Parties:
             defendant = name
 
     return Parties(plaintiff=plaintiff, defendant=defendant)
+
+
+def fill_missing_amounts(
+    pack: EvidencePack, claims: list[MoneyClaim]
+) -> list[MoneyClaim]:
+    """Добрать суммы, которые не привязались к требованию при разборе окна.
+
+    Основание уже известно (например, «неустойка и санкции»), но сумма
+    осталась None. Ищем это основание в материалах ещё раз и берём
+    ближайшую сумму после него. Это не расчёт и не выдумка: сумма
+    по-прежнему берётся из текста материалов.
+    """
+    filled: list[MoneyClaim] = []
+    for claim in claims:
+        if claim.amount is not None:
+            filled.append(claim)
+            continue
+        replacement: MoneyClaim | None = None
+        for pattern, label in CLAIM_BASIS_ANCHORS:
+            if label != claim.basis:
+                continue
+            for item in pack.items:
+                for match in pattern.finditer(item.text):
+                    tail = item.text[match.end() : match.end() + 260]
+                    found = _find_amount_with_kopecks(tail)
+                    if found is None:
+                        found = _find_amount_with_kopecks(item.text)
+                    if found is not None and found[0] and found[0] >= 100:
+                        replacement = replace(
+                            claim,
+                            amount=found[0],
+                            kopecks=found[1],
+                            source=item.source_document,
+                        )
+                        break
+                if replacement is not None:
+                    break
+            if replacement is not None:
+                break
+        filled.append(replacement or claim)
+    return filled
 
 
 def extract_fee_and_costs(pack: EvidencePack) -> tuple[int | None, int | None]:
