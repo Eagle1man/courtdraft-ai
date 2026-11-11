@@ -42,6 +42,7 @@ from app.verification.procedure_limits import (
     check_procedure_limits,
     mentions_simplified,
 )
+from app.guardrails import check_materials, check_output
 from app.verification.qualification import check_qualification, has_supply
 from app.verification.resol_checks import check_resolution
 from app.verification.subject_of_proof import ProofFact, subject_of_proof
@@ -54,6 +55,8 @@ class VerificationStatus(StrEnum):
 
 
 class IssueType(StrEnum):
+    MATERIAL_LEAK = "MATERIAL_LEAK"
+    FORBIDDEN_OUTPUT = "FORBIDDEN_OUTPUT"
     UNSUPPORTED_CLAIM = "UNSUPPORTED_CLAIM"
     MISSING_SOURCE = "MISSING_SOURCE"
     INCORRECT_QUOTE = "INCORRECT_QUOTE"
@@ -1313,6 +1316,28 @@ def verify_draft(
                     "сумма взыскана дважды в резолютивной части — "
                     "проверьте итог и состав требований"
                 ),
+            )
+        )
+
+    # ── Guardrails: утечка акта в материалы и служебный текст модели ──
+    for guardrail in check_materials(pack.documents.values()):
+        report.issues.append(
+            Issue(
+                type=IssueType.MATERIAL_LEAK,
+                severity=Severity.HIGH,
+                text=guardrail.fragment,
+                reason=guardrail.message,
+            )
+        )
+    for guardrail in check_output(
+        "\n".join(section.text for section in draft.sections)
+    ):
+        report.issues.append(
+            Issue(
+                type=IssueType.FORBIDDEN_OUTPUT,
+                severity=Severity.HIGH,
+                text=guardrail.fragment,
+                reason=guardrail.message,
             )
         )
 

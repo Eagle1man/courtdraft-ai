@@ -100,6 +100,34 @@ def test_duplicate_awards_flagged() -> None:
     assert duplicates
 
 
+def test_guardrails_detect_material_and_output_leaks() -> None:
+    from app.guardrails import check_materials, check_output
+
+    assert check_materials(["Суд решил: взыскать 1000 руб."])
+    assert check_output("Как языковая модель, я не могу помочь.")
+
+
+def test_material_leak_is_reported() -> None:
+    from app.agents.draft_agent import DraftResult, SectionDraft
+
+    pack = _pack()
+    pack.documents["06_court_findings.txt"] = "Суд решил: взыскать 1000 руб."
+    draft = DraftResult(
+        case_number="T-1",
+        sections=[
+            SectionDraft(
+                key="motivating",
+                name="Мотивировочная часть",
+                text="Суд оценивает доводы сторон.",
+                is_mock=False,
+                built_by="model",
+            )
+        ],
+    )
+    report = verify_draft(draft, pack)
+    assert any(issue.type is IssueType.MATERIAL_LEAK for issue in report.issues)
+
+
 def test_cd_core_parsers_and_profiles() -> None:
     core = _load_core()
     assert core.amounts_kop("1 561,37 руб. и 400 руб.") == [156137, 40000]
