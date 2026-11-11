@@ -76,6 +76,7 @@ class TrackingProvider(OpenAIProvider):
         budget_rub: float,
         prices: dict[str, ModelPrice],
         fallback_price: ModelPrice,
+        ledger_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -85,6 +86,19 @@ class TrackingProvider(OpenAIProvider):
         self.current_case = ""
         self._prices = prices
         self._fallback_price = fallback_price
+        self.ledger_path = Path(ledger_path) if ledger_path else None
+
+    def _ledger(self, event: dict[str, Any]) -> None:
+        if self.ledger_path is None:
+            return
+        try:
+            self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
+            line = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), **event}
+            with self.ledger_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(line, ensure_ascii=False) + "\n")
+        except OSError:
+            # Журнал не должен ломать сам прогон.
+            pass
 
     def price_for(self, model: str) -> ModelPrice:
         return self._prices.get(model, self._fallback_price)
@@ -112,21 +126,34 @@ class TrackingProvider(OpenAIProvider):
             )
 
         started = time.perf_counter()
-        data = await super()._one_call(payload)
+        try:
+            data = await super()._one_call(payload)
+        except Exception as exc:
+            self._ledger(
+                {
+                    "status": "error",
+                    "case": self.current_case,
+                    "model": str(payload.get("model") or ""),
+                    "estimated_rub": round(estimated, 6),
+                    "error": f"{type(exc).__name__}: {exc}"[:300],
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                }
+            )
+            raise
         usage = self._usage(data)
         model = str(payload.get("model") or "")
         cost = self.price_for(model).cost(usage.prompt_tokens, usage.completion_tokens)
         self.spent_rub += cost
-        self.calls.append(
-            {
-                "case": self.current_case,
-                "model": model,
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "cost_rub": round(cost, 6),
-                "latency_ms": int((time.perf_counter() - started) * 1000),
-            }
-        )
+        call = {
+            "case": self.current_case,
+            "model": model,
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "cost_rub": round(cost, 6),
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+        }
+        self.calls.append(call)
+        self._ledger({"status": "ok", "estimated_rub": round(estimated, 6), **call})
         if self.spent_rub > self.budget_rub:
             raise BudgetExceeded(
                 f"бюджет превышен после оплаченного запроса: {self.spent_rub:.4f} ₽"
@@ -192,6 +219,7 @@ def make_provider(
     *,
     budget_rub: float,
     prices: dict[str, ModelPrice],
+    ledger_path: str = str(ROOT / "artifacts" / "budget_ledger.jsonl"),
 ) -> TrackingProvider:
     fallback = ModelPrice(
         id=settings.openai_model,
@@ -204,6 +232,7 @@ def make_provider(
         budget_rub=budget_rub,
         prices=prices,
         fallback_price=fallback,
+        ledger_path=ledger_path,
         base_url=settings.openai_base_url,
         api_key=settings.openai_api_key,
         model=settings.openai_model,
