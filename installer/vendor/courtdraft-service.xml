@@ -1,0 +1,18 @@
+<service>
+  <id>CourtDraftAI</id>
+  <name>CourtDraft AI</name>
+  <description>Подготовка проекта судебного акта. Порт 8081.</description>
+  <executable>%BASE%\runtime\python\python.exe</executable>
+  <arguments>-m uvicorn app.main:app --host 0.0.0.0 --port 8081</arguments>
+  <workingdirectory>%BASE%\backend</workingdirectory>
+  <env name="PYTHONPATH" value="%BASE%\backend"/>
+  <env name="PYTHONUTF8" value="1"/>
+  <env name="PYTHONIOENCODING" value="utf-8"/>
+  <logpath>%ProgramData%\CourtDraftAI\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <onfailure action="restart" delay="10 sec"/>
+  <stoptimeout>30 sec</stoptimeout>
+</service>
