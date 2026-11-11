@@ -785,9 +785,16 @@ def extract_requirements(
     # основанием и пометкой, а не пустую резолютивную часть.
     if not money:
         for item in pack.items:
-            if item.source_document not in {"05_protocol.txt", "06_court_findings.txt"}:
+            # Только судебный акт: иск и отзыв уже разобраны выше.
+            # Иначе «взыскать 20 000» из отзыва или рассуждение суда в
+            # 01_claim.txt становились требованием истца.
+            if item.source_document != "06_court_findings.txt":
                 continue
-            if not re.search(r"взыск\w+|возмест\w+|обяза\w+", item.text, re.I):
+            if not re.search(
+                r"взыск\w+|возмест\w+|обяза\w+|задолженност\w+",
+                item.text,
+                re.I,
+            ):
                 continue
             found = _find_amount_with_kopecks(item.text)
             if found is not None and found[0] and found[0] >= 100:
@@ -804,6 +811,25 @@ def extract_requirements(
                     f"из {item.source_document}, проверьте формулировку",
                 )
                 break
+        if not money:
+            for item in pack.items:
+                if item.source_document != "06_court_findings.txt":
+                    continue
+                for match in re.finditer(
+                    r"задолженност\w*[^.]{0,320}", item.text, re.I
+                ):
+                    found = _find_amount_with_kopecks(match.group(0))
+                    if found is not None and found[0] and found[0] >= 100:
+                        money["требования истца"] = MoneyClaim(
+                            amount=found[0],
+                            kopecks=found[1],
+                            basis="требования истца",
+                            source=item.source_document,
+                            outcome=Outcome.SATISFIED,
+                        )
+                        break
+                if money:
+                    break
 
     # Исход отражается из материалов дела, если он там есть (см.
     # resolve_outcomes). Требования без исхода в материалах остаются
@@ -976,7 +1002,10 @@ def resolve_outcomes(
                 # удовлетворению не подлежит» — суд отказал именно в
                 # этом требовании: основание и сумма совпали.
                 refused.add(basis)
-            elif found is not None:
+            elif found is not None and found != (1, 88):
+                # «1 руб. 88 коп.» — устойчивый артефакт разбора даты
+                # «01.10»/«1.88», а не сумма суда. Такой «подарок»
+                # подменял всё требование частичным удовлетворением.
                 granted.setdefault(basis, []).append(found)
             break
 

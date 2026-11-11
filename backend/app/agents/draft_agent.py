@@ -596,6 +596,30 @@ def _build_operative_section(section: dict[str, Any], pack: EvidencePack) -> Sec
     from app.verification.engine import _case_date
     from app.verification.laws import state_fee
 
+    materials_text = " ".join(item.text for item in pack.items)
+    if re.search(r"\bопределени[ея]\b", materials_text, re.I) and not re.search(
+        r"\bрешил\b", materials_text, re.I
+    ):
+        # Мировое соглашение / отказ от иска / прекращение производства:
+        # это определение, а не решение. Строить «РЕШИЛ» нельзя.
+        return SectionDraft(
+            key=section["key"],
+            name=section["name"],
+            text=(
+                "По материалам дела суд вынес определение (утверждение "
+                "мирового соглашения, отказ от иска или прекращение "
+                "производства). Проект решения не формируется — требуется "
+                "ручной выбор типа судебного акта."
+            ),
+            is_mock=False,
+            needs_review=True,
+            built_by="rules",
+            gaps=[
+                "в материалах определение, а не решение: проверьте тип акта "
+                "и при необходимости сформируйте определение отдельно"
+            ],
+        )
+
     money, others, unrecognised = extract_requirements(pack)
     money = fill_missing_amounts(pack, money)
     counters = extract_counter_claims(pack)
