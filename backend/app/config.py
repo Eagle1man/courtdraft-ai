@@ -28,6 +28,19 @@ class LLMProviderName(StrEnum):
     OPENAI = "openai"
 
 
+class AuthMode(StrEnum):
+    """Режим аутентификации.
+
+    * `off`  — поведение по умолчанию, без входа и без проверки владельца;
+               для single-user/demo. Ничего не включается автоматически.
+    * `local` — локальные аккаунты, сессии и изоляция дел. Включается только
+                явно после security review/sign-off (T8 gate).
+    """
+
+    OFF = "off"
+    LOCAL = "local"
+
+
 class EmbeddingProviderName(StrEnum):
     """Провайдеры эмбеддингов (п.53)."""
 
@@ -67,6 +80,21 @@ class Settings(BaseSettings):
     # ── Приложение ──────────────────────────────────────────────────────
     app_name: str = "ИИ помощник судьи"
     app_env: AppEnv = AppEnv.DEVELOPMENT
+
+    # --- Auth (T8, подготовка; по умолчанию выключено) ---
+    # off = текущее поведение без изменений; local = вход/сессии/изоляция.
+    # Включение local в установщике/LAN — только после security review/sign-off.
+    auth_mode: AuthMode = AuthMode.OFF
+    # Секрет для подписи/защиты сессионных данных (если используется). Пустой
+    # в off-режиме допустим; при local должен быть задан явно администратором.
+    session_secret: str = ""
+    session_ttl_hours: int = 24 * 7
+    session_cookie_name: str = "courtdraft_session"
+    # Требовать CSRF-токен для state-changing запросов при cookie-auth (local).
+    auth_csrf_enabled: bool = True
+    # Разрешить bootstrap первого администратора только при пустой таблице users.
+    auth_allow_bootstrap_admin: bool = True
+
     debug: bool = False
     log_level: str = "INFO"
     # S105: это не пароль, а заглушка; реальное значение приходит из .env,
@@ -203,6 +231,10 @@ class Settings(BaseSettings):
     #: Предел ответа модели на раздел. 420 — для 1.5B на CPU: больше она
     #: не держит, качество падает быстрее, чем растёт время. Для 7B
     #: поднимается до 1 000–1 500 (см. docs/7b-tuning.md).
+    #: Какие разделы разрешено отдавать модели. Остальные собираются
+    #: правилами. Для qwen2.5:1.5b достаточно "established"; для сильных
+    #: моделей — "established,motivating".
+    model_sections: str = "established,motivating"
     draft_max_tokens: int = 420
     #: Вторая попытка с якорем: лимит выше, потому что первый ответ мог
     #: оборваться на рассуждении.
@@ -297,6 +329,15 @@ class Settings(BaseSettings):
         return value
 
     # ── Производные свойства ────────────────────────────────────────────
+    @property
+    def allowed_model_sections(self) -> set[str]:
+        """Разделы, которые разрешено генерировать модели."""
+        return {
+            item.strip()
+            for item in self.model_sections.split(",")
+            if item.strip()
+        }
+
     @property
     def is_real_mode(self) -> bool:
         """True, если включён настоящий ИИ, а не заглушка."""

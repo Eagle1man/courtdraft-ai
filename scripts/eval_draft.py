@@ -162,6 +162,10 @@ def load_case(case_dir: Path) -> tuple[str, list[CaseDocument], str]:
     for path in sorted(case_dir.glob("*.txt")):
         if path.name == REFERENCE_FILE:
             continue
+        # Судебный акт — не материал дела. В eval он давал утечку
+        # исхода: модель могла «угадать» решение, прочитав его.
+        if "court_findings" in path.name.lower():
+            continue
         text = path.read_text(encoding="utf-8").strip()
         if not text:
             continue

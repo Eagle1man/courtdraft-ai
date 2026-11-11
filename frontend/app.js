@@ -378,6 +378,7 @@ async function loadHealth() {
     } else {
       $("health").textContent = "программа готова";
     }
+    updatePrivacyFooter(info.llm_provider);
     // Проверяем связь и дальше: страница может висеть открытой часами,
     // а службу за это время перезапустят.
     setTimeout(loadHealth, 60000);
@@ -388,6 +389,23 @@ async function loadHealth() {
     $("health").textContent = "переподключение…";
     $("health-dot").classList.add("off");
     setTimeout(loadHealth, 5000);
+  }
+}
+
+function updatePrivacyFooter(provider) {
+  const footer = $("foot-privacy");
+  if (!footer) return;
+  if (provider === "openai") {
+    footer.textContent =
+      "Внимание: материалы дела отправляются во внешний API ZvenoAI. " +
+      "Не загружайте дела, которые нельзя передавать третьим лицам.";
+  } else if (provider === "ollama") {
+    footer.textContent =
+      "Данные и локальная модель работают на этом компьютере. " +
+      "Материалы дела не отправляются во внешний API.";
+  } else {
+    footer.textContent =
+      "Демонстрационный режим: реальная модель не вызывается.";
   }
 }
 

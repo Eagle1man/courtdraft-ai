@@ -1052,6 +1052,60 @@ def _build_established_section(
     )
 
 
+def _build_motivating_section(
+    section: dict[str, Any], pack: EvidencePack
+) -> SectionDraft:
+    """Мотивировочная часть по правилам — fallback для слабой модели.
+
+    Не подменяет правовую оценку: перечисляет проверенные доводы и
+    доказательства и прямо говорит, что вывод делает судья.
+    """
+    claims = pack.by_category("claims")[:3]
+    objections = pack.by_category("objections")[:3]
+    evidence = pack.by_category("evidence")[:5]
+    lines = ["Суд, оценивая доводы сторон, исходит из следующего."]
+    citations: list[str] = []
+
+    if claims:
+        lines.append("")
+        lines.append("Истцом заявлено:")
+        for item in claims:
+            lines.append(f"- {_document_title(item.source_document)}: «{item.text}»")
+            if item.source_document and item.source_document not in citations:
+                citations.append(item.source_document)
+    if objections:
+        lines.append("")
+        lines.append("Ответчик возражает:")
+        for item in objections:
+            lines.append(f"- {_document_title(item.source_document)}: «{item.text}»")
+            if item.source_document and item.source_document not in citations:
+                citations.append(item.source_document)
+    if evidence:
+        lines.append("")
+        lines.append("В материалах дела представлены:")
+        for item in evidence:
+            lines.append(f"- {_document_title(item.source_document)}: «{item.text}»")
+            if item.source_document and item.source_document not in citations:
+                citations.append(item.source_document)
+
+    lines.append("")
+    lines.append(
+        "Правовая оценка этих доводов и доказательств, а также выводы "
+        "по существу спора относятся к компетенции судьи. Раздел собран "
+        "по правилам, а не сгенерирован моделью."
+    )
+    return SectionDraft(
+        key=section["key"],
+        name=section["name"],
+        text="\n".join(lines),
+        is_mock=False,
+        citations=citations,
+        needs_review=True,
+        built_by="rules",
+        gaps=["мотивировочная часть собрана по правилам — проверьте выводы"],
+    )
+
+
 def _build_objections_section(
     section: dict[str, Any], pack: EvidencePack
 ) -> SectionDraft:
@@ -1231,15 +1285,26 @@ async def generate_draft(
     )
     started = time.perf_counter()
 
+    allowed_model_sections = cfg.allowed_model_sections
     for section in sections_to_do:
+        key = section["key"]
+        rules_only = key in RULES_BUILT_SECTIONS or (
+            key in {"established", "motivating"} and key not in allowed_model_sections
+        )
         # Резолютивная, «Доводы ответчика» и вводная — правилами, не моделью.
-        if section["key"] in RULES_BUILT_SECTIONS:
-            if section["key"] == "operative":
+        # Слабый профиль может дополнительно запретить модели писать
+        # «УСТАНОВИЛ» или мотивировочную.
+        if rules_only:
+            if key == "operative":
                 result.sections.append(_build_operative_section(section, pack))
-            elif section["key"] == "objections":
+            elif key == "objections":
                 result.sections.append(_build_objections_section(section, pack))
-            elif section["key"] == "descriptive":
+            elif key == "descriptive":
                 result.sections.append(_build_descriptive_section(section, pack))
+            elif key == "established":
+                result.sections.append(_build_established_section(section, pack))
+            elif key == "motivating":
+                result.sections.append(_build_motivating_section(section, pack))
             else:
                 result.sections.append(_build_intro_section(section, pack))
             continue

@@ -42,6 +42,9 @@ MONTHS = (
 DATE_RE = re.compile(
     r"(\d{1,2})\s+(" + "|".join(MONTHS) + r")\s+(\d{4})\s*года"
 )
+# «21.01.2013» — частая запись; без неё дата не попадала в pack.dates,
+# и расчёт пошлины по редакции на дату дела оставался без даты.
+DATE_DOT_RE = re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 
 
 def _clean_number(raw: str) -> str:
@@ -363,6 +366,13 @@ def extract_dates(text: str) -> list[str]:
     found: list[str] = []
     for day, month, year in DATE_RE.findall(text):
         value = f"{int(day)} {month} {year}"
+        if value not in found:
+            found.append(value)
+    for day, month, year in DATE_DOT_RE.findall(text):
+        month_number = int(month)
+        if not 1 <= month_number <= 12:
+            continue
+        value = f"{int(day)} {MONTHS[month_number - 1]} {year}"
         if value not in found:
             found.append(value)
     return found

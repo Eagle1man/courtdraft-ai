@@ -491,6 +491,10 @@ def extract_requirements(
         for name, text in _document_streams(pack)
         if "court_findings" not in name.lower()
     ]
+    # Одна и та же сумма не должна достаться разным основаниям в разных
+    # окнах. Раньше словарь жил внутри окна и дедупликация не работала
+    # между документами.
+    used_amounts: dict[tuple[int, int], str] = {}
     for source, text, context in _claim_windows(claim_streams):
         if _is_court_determination(context):
             # Это не требование истца, а определение суда («суд
@@ -546,7 +550,6 @@ def extract_requirements(
         # каждого пункта своя сумма, и одинаковые суммы у разных
         # оснований — не двойной счёт, а два требования («убытки
         # 5 000 рублей и неустойку 5 000 рублей»).
-        used_amounts: dict[tuple[int, int], str] = {}
         clause_text = "" if payer_is_plaintiff(requirement_text) else requirement_text
         clause_result = _clause_claims(clause_text)
         for clause_name, clause_whole, clause_kopecks in clause_result.claims:

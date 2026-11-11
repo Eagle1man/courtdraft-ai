@@ -227,7 +227,7 @@ _LAW_RE = re.compile(
     # парсер видел только 194, а 199 и 233 объявлял выдумкой модели,
     # то есть самая обычная ссылка давала CRITICAL.
     r"(?:ст\.|стат(?:ьёй|ьей|ье|ьи|ью|ьями|ьях|ьям|ьё|и)\.?)\s*"
-    r"(\d+(?:\s*(?:,|и|–|—|-)\s*\d+)*)"
+    r"(\d+(?:\.\d+)*(?:\s*(?:,|и|–|—|-)\s*\d+(?:\.\d+)*)*)"
     r"\s*(?:([А-ЯЁ][А-ЯЁ ]{0,12}?)(?:РФ|кодекс))?",
     re.IGNORECASE,
 )
@@ -547,6 +547,22 @@ def _foreign_codec_mentions(text: str, jurisdiction: str) -> list[str]:
     return found
 
 
+_AWARD_MONEY_RE = re.compile(r"(\d[\d\s]*[.,]\d{2})\s*руб", re.IGNORECASE)
+
+
+def _duplicate_awards(text: str) -> list[str]:
+    """Суммы, которые в резолютивной части взысканы дважды."""
+    seen: dict[str, int] = {}
+    for sentence in re.split(r"(?<=[.;])\s+", text or ""):
+        if "взыскать" not in sentence.lower():
+            continue
+        for match in _AWARD_MONEY_RE.finditer(sentence):
+            raw = match.group(1).replace("\u00a0", " ").strip()
+            key = re.sub(r"\s+", " ", raw)
+            seen[key] = seen.get(key, 0) + 1
+    return sorted(amount for amount, count in seen.items() if count > 1)
+
+
 def verify_draft(
     draft: DraftResult, pack: EvidencePack, settings: Settings | None = None
 ) -> VerificationReport:
@@ -562,6 +578,10 @@ def verify_draft(
 
     # Допускаем номера статей и даты из дат дела: они не суммы, но
     # встречаются в материалах и их отсутствие в пакете — ложное срабатывание.
+    # Сырые документы, а не только обрезанные pack.amounts (первые 20):
+    # копейки и числа из длинных материалов иначе выглядели выдумкой.
+    for text in pack.documents.values():
+        material_numbers |= _numbers_in(text)
     for date_value in pack.dates:
         material_numbers |= _numbers_in(date_value)
     material_numbers |= {re.sub(r"\D", "", p) for p in [pack.case_number]}
@@ -1275,6 +1295,24 @@ def verify_draft(
                 severity=severity,
                 text=assessment_finding.evidence,
                 reason=assessment_finding.reason,
+            )
+        )
+
+    # Двойное взыскание одной суммы — критическая арифметическая ошибка,
+    # даже если итог формально сходится.
+    operative_text = "\n".join(
+        section.text for section in draft.sections if section.key == "operative"
+    )
+    for amount in _duplicate_awards(operative_text):
+        report.issues.append(
+            Issue(
+                type=IssueType.RESOL_TOTAL_MISMATCH,
+                severity=Severity.CRITICAL,
+                text=amount,
+                reason=(
+                    "сумма взыскана дважды в резолютивной части — "
+                    "проверьте итог и состав требований"
+                ),
             )
         )
 
