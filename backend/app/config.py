@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     # ── OpenAI-совместимый провайдер (ZvenoAI / DeepSeek Flash) ─────────
     # Внешняя модель включается ключом. Без ключа фабрика возвращает MOCK,
     # чтобы сервис стартовал в degraded-режиме (п.53), а не падал.
+    #
+    # Облако по умолчанию ЗАПРЕЩЕНО: даже с ключом и LLM_PROVIDER=openai
+    # запросы наружу не уходят, пока явно не выставлено ALLOW_CLOUD_LLM=true.
+    # Это защита от случайной отправки данных дела во внешний API.
+    allow_cloud_llm: bool = False
     openai_base_url: str = "https://api.zveno.ai/v1"
     openai_api_key: str = ""
     openai_model: str = "deepseek/deepseek-v4-flash-0731"

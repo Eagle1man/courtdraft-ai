@@ -196,3 +196,35 @@ class TestFactory:
             ollama_model="другая:8b",
         )
         assert build_llm_provider(settings)._model == "другая:8b"  # noqa: SLF001
+
+
+class TestCloudGuard:
+    """Облако запрещено без явного ALLOW_CLOUD_LLM=true.
+
+    Ключ и LLM_PROVIDER=openai сами по себе не разрешают отправку
+    данных дела во внешний API.
+    """
+
+    def test_openai_without_allow_cloud_falls_back_to_mock(self) -> None:
+        settings = Settings(
+            llm_provider=LLMProviderName.OPENAI,
+            openai_api_key="test-key",
+            allow_cloud_llm=False,
+        )
+        assert build_llm_provider(settings).name == "mock"
+
+    def test_openai_without_key_falls_back_to_mock(self) -> None:
+        settings = Settings(
+            llm_provider=LLMProviderName.OPENAI,
+            openai_api_key="",
+            allow_cloud_llm=True,
+        )
+        assert build_llm_provider(settings).name == "mock"
+
+    def test_openai_with_explicit_permission_builds_provider(self) -> None:
+        settings = Settings(
+            llm_provider=LLMProviderName.OPENAI,
+            openai_api_key="test-key",
+            allow_cloud_llm=True,
+        )
+        assert build_llm_provider(settings).name == "openai"

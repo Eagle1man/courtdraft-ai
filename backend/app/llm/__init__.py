@@ -46,6 +46,13 @@ def build_llm_provider(
         )
 
     if cfg.llm_provider is LLMProviderName.OPENAI:
+        if not cfg.allow_cloud_llm:
+            logger.warning(
+                "LLM_PROVIDER=openai, но облако запрещено без "
+                "ALLOW_CLOUD_LLM=true — система работает в MOCK-режиме, "
+                "наружу запросы не уходят"
+            )
+            return MockLLMProvider()
         if not cfg.openai_api_key:
             logger.warning(
                 "LLM_PROVIDER=openai, но OPENAI_API_KEY не задан — "

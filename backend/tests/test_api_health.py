@@ -43,7 +43,11 @@ class TestRoot:
         """
         response = await client.get("/", follow_redirects=False)
         assert response.status_code in {302, 307}
-        assert response.headers["location"] == "/app"
+        # Именно со слэшем: без него браузер ищет app.js у корня.
+        assert response.headers["location"] == "/app/"
+        redirected = await client.get("/app", follow_redirects=False)
+        assert redirected.status_code == 307
+        assert redirected.headers["location"] == "/app/"
 
     async def test_root_serves_info_without_interface(self, tmp_path: Path) -> None:
         """Без интерфейса корень отдаёт сведения о сервисе.
