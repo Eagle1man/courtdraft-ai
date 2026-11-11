@@ -13,7 +13,13 @@ import platform
 import sys
 from datetime import UTC, datetime
 
-from app.config import AppEnv, QdrantMode, Settings, get_settings
+from app.config import (
+    AppEnv,
+    LLMProviderName,
+    QdrantMode,
+    Settings,
+    get_settings,
+)
 from app.db.session import describe_url, is_sqlite
 from app.embeddings import build_embedding_provider
 from app.llm import build_llm_provider
@@ -71,8 +77,20 @@ async def _check_llm(cfg: Settings) -> ComponentHealth:
 
     healthy = await provider.health()
     if healthy:
-        detail = f"{provider.name} / {cfg.ollama_model}"
-        if cfg.model_routing_enabled and cfg.strong_model_quota > 0:
+        if provider.name == "openai":
+            model = cfg.openai_model
+            where = cfg.openai_base_url
+        else:
+            model = cfg.ollama_model
+            where = cfg.ollama_base_url
+        detail = f"{provider.name} / {model}"
+        if provider.name == "openai" and cfg.openai_model_auto:
+            detail += " (автовыбор самой дешёвой DeepSeek Flash)"
+        if (
+            provider.name == "ollama"
+            and cfg.model_routing_enabled
+            and cfg.strong_model_quota > 0
+        ):
             strong = cfg.strong_model or cfg.ollama_model
             weak = cfg.weak_model or cfg.ollama_model
             detail = (
@@ -86,26 +104,34 @@ async def _check_llm(cfg: Settings) -> ComponentHealth:
         )
 
     # В runtime-режиме реальная модель обязательна.
+    if provider.name == "openai":
+        model = cfg.openai_model
+        where = cfg.openai_base_url
+        required = True
+    else:
+        model = cfg.ollama_model
+        where = cfg.ollama_base_url
+        required = cfg.ollama_enabled
     return ComponentHealth(
         name="LLM",
-        state=ComponentState.UNAVAILABLE if cfg.ollama_enabled else ComponentState.MOCK,
-        detail=f"{cfg.ollama_model} недоступна на {cfg.ollama_base_url}",
-        required=cfg.ollama_enabled,
+        state=ComponentState.UNAVAILABLE if required else ComponentState.MOCK,
+        detail=f"{model} недоступна на {where}",
+        required=required,
     )
 
 
 async def _check_ollama(cfg: Settings) -> ComponentHealth:
     """Состояние Ollama. На DEV она не требуется (п.38)."""
-    if not cfg.ollama_enabled:
+    if cfg.llm_provider is not LLMProviderName.OLLAMA or not cfg.ollama_enabled:
         return ComponentHealth(
             name="Ollama",
             state=ComponentState.NOT_REQUIRED,
-            detail="не требуется в режиме разработки",
+            detail="не используется в текущем режиме",
             required=False,
         )
 
     provider = build_llm_provider(cfg)
-    healthy = provider.name != "ollama" or await provider.health()
+    healthy = await provider.health()
     return ComponentHealth(
         name="Ollama",
         state=ComponentState.OK if healthy else ComponentState.UNAVAILABLE,

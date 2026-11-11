@@ -25,6 +25,7 @@ class LLMProviderName(StrEnum):
 
     MOCK = "mock"
     OLLAMA = "ollama"
+    OPENAI = "openai"
 
 
 class EmbeddingProviderName(StrEnum):
@@ -83,6 +84,31 @@ class Settings(BaseSettings):
     ollama_timeout_sec: int = 120
     ollama_num_ctx: int = 4096
     ollama_temperature: float = 0.1
+
+    # ── OpenAI-совместимый провайдер (ZvenoAI / DeepSeek Flash) ─────────
+    # Внешняя модель включается ключом. Без ключа фабрика возвращает MOCK,
+    # чтобы сервис стартовал в degraded-режиме (п.53), а не падал.
+    openai_base_url: str = "https://api.zveno.ai/v1"
+    openai_api_key: str = ""
+    openai_model: str = "deepseek/deepseek-v4-flash-0731"
+    # Автовыбор самой дешёвой модели семейства DeepSeek Flash по размеру
+    # запроса. При смене цен Zveno выбор пересчитывается сам.
+    openai_model_auto: bool = True
+    openai_model_filter: str = "deepseek"
+    openai_expected_out_tokens: int = 300
+    openai_timeout_sec: int = 120
+    # Нижняя граница ответа: у DeepSeek есть reasoning, и при малом
+    # max_tokens модель тратит бюджет на размышления и отдаёт пустой content.
+    openai_max_tokens: int = 700
+    openai_temperature: float = 0.1
+    openai_retries: int = 2
+    openai_retry_delay: float = 0.6
+    openai_reasoning_effort: str = "none"
+    # Цены-заглушки на случай, если /models недоступен. ₽ за 1M токенов.
+    openai_price_in: float = 8.3899704
+    openai_price_out: float = 27.0644205
+    openai_price_cache: float = 2.706442
+    openai_price_ttl_sec: int = 21600
 
     # ── Квота на сильную модель (тест на живых пользователях) ───────────
     # Первым N делам достаётся сильная модель, остальным — быстрая.
