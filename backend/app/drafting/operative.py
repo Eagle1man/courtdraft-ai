@@ -349,8 +349,8 @@ class OperativePart:
         """Текст резолютивной части с обязательной ссылкой на закон."""
         if not self.items:
             return (
-                f"{REVIEW}: требования истца не установлены, "
-                "резолютивная часть не сформирована."
+                f"{REVIEW}: сумма требования в материалах не раскрыта — "
+                "требуется ручной расчёт судьи."
             )
         # Преамбула «Руководствуясь ст. 198 ГПК РФ, суд решил:» стоит
         # первым элементом items, но в тексте это вводная к пунктам, а не
@@ -373,6 +373,11 @@ class OperativePart:
         return text
 
 
+def _split_amount(value: float) -> tuple[int, int]:
+    whole = int(value)
+    return whole, round((float(value) - whole) * 100)
+
+
 def _amount(value: float, kopecks: int = 0) -> str:
     """Сумма в принятой форме.
 
@@ -380,9 +385,11 @@ def _amount(value: float, kopecks: int = 0) -> str:
     пробелом, копейки пишутся двумя цифрами — так в судебных актах,
     и так показывает разбор 1 425 решений.
     """
-    whole = int(value)
+    whole, extra = _split_amount(value)
+    if kopecks:
+        extra = kopecks
     formatted = f"{whole:,}".replace(",", " ")
-    return f"{formatted} руб. {kopecks:02d} коп."
+    return f"{formatted} руб. {extra:02d} коп."
 
 
 def _amount_with_words(value: float, kopecks: int = 0) -> str:
@@ -822,9 +829,9 @@ def build_operative(
             # и в итог «а всего» не входит: туда попадает только то, что
             # взыскивается в определённом размере.
             if not proportional:
-                granted.append((fee_paid, 0))
+                granted.append(_split_amount(fee_paid))
                 if costs is not None:
-                    granted.append((costs, 0))
+                    granted.append(_split_amount(costs))
 
     # Иные расходы по ст. 100 ГПК РФ не зависят от пошлины: их понёс
     # истец, и суд возвращает их независимо от того, известна ли
@@ -854,7 +861,7 @@ def build_operative(
                 f"{named.plaintiff_genitive} иные расходы в размере "
                 f"{_amount(costs)} (ст. 100 ГПК РФ)."
             )
-            granted.append((costs, 0))
+            granted.append(_split_amount(costs))
 
     # 5. Итог «а всего». Так пишут в резолюции: одна цифра, из которой
     #    видно общий размер взыскания.

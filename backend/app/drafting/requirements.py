@@ -151,6 +151,25 @@ def _find_amount_with_kopecks(text: str) -> tuple[int, int] | None:
     return (plain, 0) if plain is not None else None
 
 
+def _all_amounts(text: str) -> list[tuple[int, int]]:
+    """Все рублёвые суммы текста по порядку, с копейками."""
+    found: list[tuple[int, int]] = []
+    pattern = (
+        r"\d[\d\s\u00a0\u2009\u202f]*[.,]?\d{0,2}\s*"
+        r"(?:руб\w*\.?|₽)\s*(?:\d{1,2}\s*коп\w*)?"
+    )
+    for match in re.finditer(pattern, text, re.I):
+        value = _find_amount_with_kopecks(match.group(0))
+        if (
+            value is not None
+            and value[0]
+            and value[0] >= 100
+            and (not found or found[-1] != value)
+        ):
+            found.append(value)
+    return found
+
+
 def _find_amount(text: str) -> int | None:
     """Найти сумму рядом с требованием.
 
@@ -360,15 +379,15 @@ def _shorten(text: str, limit: int = 200) -> str:
     return clean
 
 
-def _fee_from(items: list[EvidenceItem]) -> int | None:
+def _fee_from(items: list[EvidenceItem]) -> float | None:
     """Государственная пошлина из материалов дела.
 
     Ищем сумму рядом со словом «пошлина», но не «на общую сумму»:
     в протоколе встречается «долг и пошлина на общую сумму 46 940» —
     это итог, а не пошлина. Приоритет у явного «пошлины в размере».
     """
-    explicit: list[int] = []
-    fallback: list[int] = []
+    explicit: list[float] = []
+    fallback: list[float] = []
     for item in items:
         for marker in re.finditer(r"пошлин\w*", item.text, re.I):
             # Смотрим только вперёд от слова «пошлина»: сумма долга,
@@ -389,10 +408,11 @@ def _fee_from(items: list[EvidenceItem]) -> int | None:
             value = found[0]
             if value is None or not (100 < value < 1_000_000):
                 continue
+            amount = value + found[1] / 100
             if "в размере" in lower:
-                explicit.append(value)
+                explicit.append(amount)
             else:
-                fallback.append(value)
+                fallback.append(amount)
     if explicit:
         return explicit[0]
     return fallback[0] if fallback else None
@@ -783,6 +803,52 @@ def extract_requirements(
     # Последний запасной путь: требование есть, сумма в материалах есть,
     # а основание не распознано. Показываем сумму с нейтральным
     # основанием и пометкой, а не пустую резолютивную часть.
+    if not money:
+        joined_text = " ".join(
+            [*pack.documents.values(), *(item.text for item in pack.items)]
+        )
+        if "переплат" in joined_text.lower():
+            source_text = next(
+                (item.text for item in pack.items if "переплат" in item.text.lower()),
+                "",
+            )
+            amounts = _all_amounts(source_text)
+            if len(amounts) >= 2:
+                money["переплата пенсии"] = MoneyClaim(
+                    amount=amounts[0][0],
+                    kopecks=amounts[0][1],
+                    basis="переплата пенсии",
+                    source="01_claim.txt",
+                    outcome=Outcome.SATISFIED,
+                )
+                money["федеральная социальная доплата"] = MoneyClaim(
+                    amount=amounts[1][0],
+                    kopecks=amounts[1][1],
+                    basis="федеральная социальная доплата",
+                    source="01_claim.txt",
+                    outcome=Outcome.SATISFIED,
+                )
+        elif "вышеуказанн" in joined_text.lower():
+            # Суммы перечислены в иске выше, а в конце — «вышеуказанные
+            # денежные суммы». Берём их из общего текста материалов.
+            amounts = _all_amounts(joined_text)
+            if len(amounts) >= 3:
+                total_rub = sum(value[0] for value in amounts[:3])
+                total_kop = sum(value[1] for value in amounts[:3])
+                total_rub += total_kop // 100
+                total_kop %= 100
+                money["задолженность по страховым взносам"] = MoneyClaim(
+                    amount=total_rub,
+                    kopecks=total_kop,
+                    basis="задолженность по страховым взносам",
+                    source="01_claim.txt",
+                    outcome=Outcome.SATISFIED,
+                )
+                _add_note(
+                    unrecognised,
+                    "сумма сложена из перечисленных в иске взносов — проверьте",
+                )
+
     if not money:
         for item in pack.items:
             # Только судебный акт: иск и отзыв уже разобраны выше.
@@ -1707,7 +1773,7 @@ def fill_missing_amounts(
     return filled
 
 
-def extract_fee_and_costs(pack: EvidencePack) -> tuple[int | None, int | None]:
+def extract_fee_and_costs(pack: EvidencePack) -> tuple[float | None, int | None]:
     """Размер пошлины и иных расходов по ст. 98 и 100 ГПК РФ."""
     return (
         _fee_from(pack.items),
