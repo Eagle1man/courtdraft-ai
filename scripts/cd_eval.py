@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from cd_core import amounts_kop  # noqa: E402
 from eval_deepseek_quality import (  # noqa: E402
     evaluate_case,
     fetch_prices,
@@ -124,6 +125,13 @@ async def run(args: argparse.Namespace) -> int:
         for path in cases_dir.iterdir()  # noqa: ASYNC240
         if path.is_dir() and (path / "court_reference.txt").exists()
     )
+    if args.require_amounts:
+        amount_cases = []
+        for path in cases:
+            claim = path / "01_claim.txt"
+            if claim.exists() and amounts_kop(claim.read_text(encoding="utf-8")):
+                amount_cases.append(path)
+        cases = amount_cases
     if args.limit:
         cases = cases[: args.limit]
     if not cases:
@@ -177,6 +185,11 @@ def main() -> int:
     parser.add_argument("--cases", default=str(DEFAULT_CASES))
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument(
+        "--require-amounts",
+        action="store_true",
+        help="только дела, где в иске есть рублёвая сумма",
+    )
     parser.add_argument("--max-tokens", type=int, default=0)
     parser.add_argument("--budget-rub", type=float, default=2.0)
     args = parser.parse_args()
