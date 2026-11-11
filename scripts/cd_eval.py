@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import random
 import re
 import sys
 from collections import Counter, defaultdict
@@ -172,6 +173,9 @@ async def _run_blocks(args: argparse.Namespace) -> int:
     if args.targets:
         wanted_targets = {item.strip() for item in args.targets.split(",") if item.strip()}
         tasks = [task for task in tasks if task.get("target") in wanted_targets]
+    if args.sample:
+        random.Random(args.seed).shuffle(tasks)  # noqa: S311 - выборка, не криптография
+        tasks = tasks[: args.sample]
     if args.limit:
         tasks = tasks[: args.limit]
     if not tasks:
@@ -369,6 +373,8 @@ def main() -> int:
     parser.add_argument("--targets", default="")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--sample", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--require-amounts",
         action="store_true",

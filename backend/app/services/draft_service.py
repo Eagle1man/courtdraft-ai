@@ -192,9 +192,21 @@ class DraftService:
         template = load_template(
             name=template_name or template_name_for_case(case.case_type)
         )
-        draft_result = await generate_draft(pack, template, provider=provider)
+        cfg = get_settings()
+        if cfg.multi_agent_enabled:
+            from app.agents.pipeline import run_pipeline
 
-        report = verify_draft(draft_result, pack)
+            pipeline = await run_pipeline(
+                pack,
+                template,
+                provider=provider,
+                settings=cfg,
+            )
+            draft_result = pipeline.draft
+            report = pipeline.verification
+        else:
+            draft_result = await generate_draft(pack, template, provider=provider)
+            report = verify_draft(draft_result, pack)
 
         draft, version = await self._persist(
             case_id,

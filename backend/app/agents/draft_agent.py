@@ -1310,6 +1310,15 @@ async def generate_draft(
             continue
 
         request_text, citations = build_section_prompt(section, pack)
+        if cfg.graphrag_enabled:
+            from app.graphrag import KnowledgeGraph
+
+            graph_context = KnowledgeGraph.from_pack(pack).context_for(section["key"])
+            if graph_context:
+                request_text += (
+                    "\n\nСВЯЗАННЫЕ ФАКТЫ, СУММЫ И НОРМЫ (только из материалов):\n"
+                    + graph_context
+                )
 
         # Две попытки. Первая — обычный запрос. Вторая — с якорным
         # началом: на живом прогоне «УСТАНОВИЛ» приходил английским

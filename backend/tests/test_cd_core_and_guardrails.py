@@ -128,6 +128,68 @@ def test_material_leak_is_reported() -> None:
     assert any(issue.type is IssueType.MATERIAL_LEAK for issue in report.issues)
 
 
+def test_graphrag_builds_linked_context() -> None:
+    from app.graphrag import KnowledgeGraph
+
+    pack = _pack()
+    pack.documents["01_claim.txt"] = "Договор займа"
+    pack.amounts = ["1000"]
+    pack.participants = ["Истец (истец)"]
+    pack.items.append(
+        EvidenceItem(
+            category="claims",
+            text="Просит взыскать долг 1000 руб. по ст. 309 ГК РФ.",
+            source_document="01_claim.txt",
+            source_type="CLAIM",
+            amounts=["1000"],
+            order=1,
+        )
+    )
+    graph = KnowledgeGraph.from_pack(pack)
+    summary = graph.summary()
+    assert summary["fact"] == 1
+    assert summary["amount"] >= 1
+    assert summary["norm"] >= 1
+    context = graph.context_for("motivating")
+    assert "309" in context
+    assert "1000" in context
+
+
+def test_multi_agent_pipeline_mock() -> None:
+    import asyncio
+
+    from app.agents.evidence_pack import load_template
+    from app.agents.pipeline import run_pipeline
+    from app.llm.mock import MockLLMProvider
+
+    pack = _pack()
+    pack.case_number = "T-1"
+    pack.items.append(
+        EvidenceItem(
+            category="claims",
+            text="Просит взыскать долг 1000 руб.",
+            source_document="01_claim.txt",
+            source_type="CLAIM",
+            amounts=["1000"],
+            order=1,
+        )
+    )
+    settings = Settings(model_sections="established,motivating")
+    template = load_template(settings)
+    result = asyncio.run(
+        run_pipeline(pack, template, provider=MockLLMProvider(), settings=settings)
+    )
+    assert result.stages == [
+        "research",
+        "verify_materials",
+        "synthesize",
+        "generate",
+        "review",
+    ]
+    assert result.draft.sections
+    assert result.graph.summary()["edges"] > 0
+
+
 def test_cd_core_parsers_and_profiles() -> None:
     core = _load_core()
     assert core.amounts_kop("1 561,37 руб. и 400 руб.") == [156137, 40000]

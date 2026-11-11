@@ -235,6 +235,10 @@ class Settings(BaseSettings):
     #: правилами. Для qwen2.5:1.5b достаточно "established"; для сильных
     #: моделей — "established,motivating".
     model_sections: str = "established,motivating"
+    # GraphRAG: добавлять в промпт связанные факты/суммы/нормы из графа.
+    graphrag_enabled: bool = False
+    # Multi-agent: research → verify → synthesize → generate → review.
+    multi_agent_enabled: bool = False
     draft_max_tokens: int = 420
     #: Вторая попытка с якорем: лимит выше, потому что первый ответ мог
     #: оборваться на рассуждении.

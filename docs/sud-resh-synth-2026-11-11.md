@@ -77,6 +77,44 @@ Smoke-результат:
 `defendant_arguments` — 0,0500. Это только smoke, не вывод о качестве:
 3 задания, одна модель, один прогон.
 
+## DeepSeek block-прогон
+
+35 заданий, случайная выборка (`--sample 35 --seed 7`), DeepSeek Flash:
+
+| Показатель | Значение |
+|---|---:|
+| Заданий | 35 |
+| Средний token-F1 | **0.1563** |
+| Расход | **0.0995 ₽** |
+| Ошибок сети | 8 (учтены как 0) |
+
+По блокам:
+
+| Блок | F1 |
+|---|---:|
+| plaintiff_arguments | 0.2354 |
+| decision | 0.2192 |
+| norms | 0.1806 |
+| judge_logic | 0.1675 |
+| evidence_assessment | 0.0982 |
+| requirements | 0.0483 |
+| defendant_arguments | 0.0000 |
+
+Это baseline, а не финальная оценка: 35 заданий, 8 сетевых ошибок,
+один прогон.
+
+## GraphRAG и multi-agent
+
+Добавлены:
+
+- `backend/app/graphrag.py` — граф «дело → документы → факты → суммы/нормы/стороны»;
+  `context_for()` отбирает связанные узлы для промпта.
+- `backend/app/agents/pipeline.py` — стадии
+  `research → verify_materials → synthesize → generate → review`.
+- Флаги `GRAPHRAG_ENABLED` и `MULTI_AGENT_ENABLED` (по умолчанию выключены).
+- `DraftService.generate` использует pipeline при `MULTI_AGENT_ENABLED=true`.
+- `generate_draft` добавляет graph-контекст при `GRAPHRAG_ENABLED=true`.
+
 ## Ограничения
 
 - Датасет размечен LLM, экспертные оценки 3,5–4,8/5; это не золотой стандарт.
