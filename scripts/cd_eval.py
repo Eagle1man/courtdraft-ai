@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
 import re
 import sys
@@ -183,6 +184,11 @@ async def _run_blocks(args: argparse.Namespace) -> int:
         return 1
 
     settings = _settings(args.provider, args.model, args.max_tokens)
+    if args.provider == "openai" and os.environ.get(
+        "ALLOW_CLOUD_LLM", ""
+    ).lower() not in {"1", "true", "yes"}:
+        print("Облачный провайдер отключён. Для включения: ALLOW_CLOUD_LLM=true.")
+        return 2
     if args.provider == "openai":
         prices, error = fetch_prices(settings)
         if error:
@@ -325,6 +331,11 @@ async def run(args: argparse.Namespace) -> int:
 
     settings = _settings(args.provider, args.model, args.max_tokens)
     template = load_template(settings)
+    if args.provider == "openai" and os.environ.get(
+        "ALLOW_CLOUD_LLM", ""
+    ).lower() not in {"1", "true", "yes"}:
+        print("Облачный провайдер отключён. Для включения: ALLOW_CLOUD_LLM=true.")
+        return 2
     if args.provider == "openai":
         prices, error = fetch_prices(settings)
         if error:

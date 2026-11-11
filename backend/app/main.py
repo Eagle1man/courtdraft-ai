@@ -216,7 +216,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         заставлять его угадывать путь к интерфейсу незачем.
         """
         if cfg.frontend_available:
-            return RedirectResponse(url="/app")
+            # Именно со слэшем: иначе относительные app.js/styles.css
+            # браузер запрашивает у корня (/app.js) и интерфейс пустой.
+            return RedirectResponse(url="/app/")
         return {
             "name": "ИИ помощник судьи",
             "version": VERSION,
@@ -226,6 +228,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     if cfg.frontend_available:
+        @app.get("/app", include_in_schema=False)
+        async def app_root() -> RedirectResponse:
+            """Без слэша относительные asset-ссылки уходят в корень."""
+            return RedirectResponse(url="/app/", status_code=307)
+
         # Интерфейс раздаётся тем же приложением: один порт, один
         # источник происхождения, никакого CORS и отдельного сервера.
         app.mount(

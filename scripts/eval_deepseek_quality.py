@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 import sys
 import time
@@ -627,6 +628,14 @@ def write_judge_pack(out_dir: Path, items: list[CaseQuality], *, limit: int = 3)
 
 async def run(args: argparse.Namespace) -> int:
     settings = make_settings(args)
+    if settings.llm_provider is LLMProviderName.OPENAI and os.environ.get(
+        "ALLOW_CLOUD_LLM", ""
+    ).lower() not in {"1", "true", "yes"}:
+        print(
+            "Облачный провайдер отключён. Для явного включения: "
+            "ALLOW_CLOUD_LLM=true."
+        )
+        return 2
     if not settings.openai_api_key:
         print("НЕТ КЛЮЧА: OPENAI_API_KEY не задан в .env")
         return 2
