@@ -106,3 +106,61 @@ class TestEmptySection:
         # оно растёт один раз на незаглушечный раздел.
         assert data["sections_checked"] == len(result.sections)
         assert data["claims_checked"] <= data["sections_checked"]
+
+
+class TestModelUsage:
+    def test_actual_model_and_tokens_are_recorded(self) -> None:
+        """Демо и T5 обязаны видеть модель, которая реально ответила."""
+        pack = EvidencePack(case_number="T-6", court_name="Мировой судья")
+        pack.items.append(
+            EvidenceItem(
+                category="claims",
+                text="Взыскать 150 000 руб.",
+                source_document="01_claim.txt",
+                source_type="CLAIM",
+                order=1,
+            )
+        )
+        from app.agents.evidence_pack import load_template
+
+        template = load_template(name="civil_judgment")
+
+        class _Usage:
+            prompt_tokens = 31
+            completion_tokens = 17
+
+        class _Response:
+            text = (
+                "В силу статьи 310 ГК РФ обязательства должны исполняться "
+                "надлежащим образом и односторонний отказ от исполнения "
+                "недопустим. Материалами дела подтверждено, что ответчик "
+                "получил товар и оплату не произвёл. Довод ответчика о "
+                "ненадлежащем качестве товара отклоняется: доказательств "
+                "этого обстоятельства в силу ст. 56 ГПК РФ не представлено. "
+                "На основании изложенного требование о взыскании "
+                "задолженности подлежит удовлетворению в полном размере."
+            )
+            is_mock = False
+            model = "deepseek/test-model"
+            usage = _Usage()
+
+        class _LLM:
+            name = "openai"
+
+            async def generate(self, request):  # noqa: ANN001, ANN201
+                return _Response()
+
+        result = asyncio.run(
+            generate_draft(
+                pack,
+                template,
+                provider=_LLM(),
+                only_sections=["motivating"],
+            )
+        )
+        assert len(result.sections) == 1
+        section = result.sections[0]
+        assert section.model == "deepseek/test-model"
+        assert section.prompt_tokens == 31
+        assert section.completion_tokens == 17
+        assert result.model == "deepseek/test-model"

@@ -316,6 +316,11 @@ async def run_demo(
     llm = build_llm_provider(settings)
     if provider == "mock":
         say("  LLM:      MockLLMProvider (мгновенно, реальная модель не вызывается)", log)
+    elif provider == "openai":
+        say("  LLM:      ZvenoAI / DeepSeek Flash (автовыбор самой дешёвой)", log)
+        say(f"           адрес {settings.openai_base_url}", log)
+        alive = await llm.health()
+        say(f"  доступна: {'да' if alive else 'НЕТ — будет запись об ошибке'}", log)
     else:
         say(f"  LLM:      Ollama, модель {settings.ollama_model}", log)
         say(f"           адрес {settings.ollama_base_url}", log)
@@ -519,8 +524,15 @@ async def run_demo(
     for section in draft.sections:
         flag = "MOCK" if section.is_mock else "REAL"
         review = " ⚠ требует проверки" if section.needs_review else ""
+        model_part = f" · {section.model}" if section.model else ""
+        tokens_part = (
+            f" · токены {section.prompt_tokens}+{section.completion_tokens}"
+            if section.prompt_tokens or section.completion_tokens
+            else ""
+        )
         say(
             f"    [{flag}] {section.name:<24} {section.latency_ms/1000:>6.1f} с"
+            f"{model_part}{tokens_part}"
             f" · {len(section.text):>5} симв.{review}",
             log,
         )
@@ -536,6 +548,13 @@ async def run_demo(
     say(f"  ссылок на источники: {stats['citations']}", log)
     say(f"  утверждений без источника: {report.unsupported_claims}", log)
     say(f"  время генерации: {draft.total_latency_ms/1000:.1f} с", log)
+    say(f"  модель: {draft.model or '—'}", log)
+    say(
+        "  токены: "
+        f"{sum(s.prompt_tokens for s in draft.sections)}+"
+        f"{sum(s.completion_tokens for s in draft.sections)}",
+        log,
+    )
 
     # ── Шаг 7.1. Что именно нашла система ────────────────────────────
     #
@@ -581,7 +600,15 @@ async def run_demo(
             {
                 "warning": manifest.get("warning", "SYNTHETIC DEMO DATA"),
                 "mode": provider,
-                "model": settings.ollama_model if provider != "mock" else "mock",
+                "model": draft.model or ("mock" if provider == "mock" else ""),
+                "usage": {
+                    "prompt_tokens": sum(
+                        s.prompt_tokens for s in draft.sections
+                    ),
+                    "completion_tokens": sum(
+                        s.completion_tokens for s in draft.sections
+                    ),
+                },
                 "case_number": pack.case_number,
                 "evidence_pack": pack.to_dict(),
                 "draft": {
@@ -594,6 +621,9 @@ async def run_demo(
                             "is_mock": s.is_mock,
                             "needs_review": s.needs_review,
                             "citations": s.citations,
+                            "model": s.model,
+                            "prompt_tokens": s.prompt_tokens,
+                            "completion_tokens": s.completion_tokens,
                         }
                         for s in draft.sections
                     ],
@@ -647,7 +677,11 @@ async def run_demo(
     # ── Итог ────────────────────────────────────────────────────────
     elapsed = time.perf_counter() - started
     banner("ИТОГ", "ДЕМО ПРОЙДЕНО", log)
-    mode_label = "MOCK (заглушка)" if provider == "mock" else f"REAL, {settings.ollama_model}"
+    mode_label = (
+        "MOCK (заглушка)"
+        if provider == "mock"
+        else f"REAL, {draft.model or settings.ollama_model}"
+    )
     say(f"  общее время: {elapsed:.1f} с", log)
     say(f"  режим:       {mode_label}", log)
     say(f"  статус проверки: {report.status.value}", log)

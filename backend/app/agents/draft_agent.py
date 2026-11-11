@@ -103,6 +103,13 @@ class SectionDraft:
     #: «ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ» — это техническая пометка, а не
     #: текст судебного решения (см. _strip_markers).
     gaps: list[str] = field(default_factory=list)
+    #: Фактическая модель, сгенерировавшая текст. Для openai это модель,
+    #: выбранная роутером на этот запрос, а не модель из конфига.
+    model: str = ""
+    #: Расход токенов на раздел, включая отклонённые попытки: они тоже
+    #: оплачены, и comparison-отчёт обязан это учитывать.
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 @dataclass
@@ -1192,6 +1199,9 @@ async def generate_draft(
         gaps: list[str] = []
         latency_ms = 0
         reason = ""
+        section_model = ""
+        section_prompt_tokens = 0
+        section_completion_tokens = 0
 
         for attempt, prompt in enumerate(prompts):
             request = LLMRequest(
@@ -1240,6 +1250,13 @@ async def generate_draft(
                     continue
                 break
             latency_ms += int((time.perf_counter() - started_section) * 1000)
+            section_model = getattr(response, "model", "") or section_model
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                section_prompt_tokens += getattr(usage, "prompt_tokens", 0) or 0
+                section_completion_tokens += (
+                    getattr(usage, "completion_tokens", 0) or 0
+                )
 
             # Ответ модели может оказаться не текстом раздела, а её
             # рассуждениями или повтором одной фразы. Такой текст не
@@ -1331,6 +1348,9 @@ async def generate_draft(
                 latency_ms=latency_ms,
                 error=error,
                 gaps=gaps,
+                model=section_model,
+                prompt_tokens=section_prompt_tokens,
+                completion_tokens=section_completion_tokens,
             )
         )
 
@@ -1378,6 +1398,12 @@ async def generate_draft(
             ]
             built.latency_ms = section.latency_ms
             result.sections[position] = built
+
+    actual_models = sorted(
+        {section.model for section in result.sections if section.model}
+    )
+    if actual_models:
+        result.model = ", ".join(actual_models)
 
     result.total_latency_ms = int((time.perf_counter() - started) * 1000)
     return result
