@@ -352,14 +352,26 @@ async def evaluate_case(
             case_type="civil",
             settings=settings,
         )
-        draft = await generate_draft(
-            pack,
-            template,
-            settings=settings,
-            provider=provider,
-        )
+        if settings.multi_agent_enabled:
+            from app.agents.pipeline import run_pipeline
+
+            pipeline = await run_pipeline(
+                pack,
+                template,
+                provider=provider,
+                settings=settings,
+            )
+            draft = pipeline.draft
+            verify_report = pipeline.verification
+        else:
+            draft = await generate_draft(
+                pack,
+                template,
+                settings=settings,
+                provider=provider,
+            )
+            verify_report = verify_draft(draft, pack)
         summary = assess(draft, pack, case_dir.name, joined, reference)
-        verify_report = verify_draft(draft, pack)
         operative = operative_text_of(draft)
         comparison = compare_with_reference(draft, operative, reference)
         item.provider = draft.provider
@@ -602,6 +614,11 @@ async def run(args: argparse.Namespace) -> int:
 
     provider = make_provider(settings, budget_rub=args.budget_rub, prices=prices)
     healthy = await provider.health()
+    for _ in range(3):
+        if healthy:
+            break
+        await asyncio.sleep(4)
+        healthy = await provider.health()
     print(f"Ключ/модели: {'OK' if healthy else 'НЕДОСТУПНЫ'}")
     if not healthy:
         print("Проверка не запущена: API/ключ недоступны.")

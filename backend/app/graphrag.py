@@ -68,24 +68,48 @@ class KnowledgeGraph:
         return graph
 
     def context_for(self, section_key: str, *, limit: int = 8) -> str:
-        """Связанные факты/суммы/нормы для промпта раздела."""
-        wanted = {
-            "established": {"fact", "amount"},
-            "motivating": {"fact", "amount", "norm"},
-            "operative": {"amount", "fact"},
-            "descriptive": {"fact", "amount"},
-        }.get(section_key, {"fact", "amount", "norm"})
+        """Связанные факты/суммы/нормы для промпта раздела.
+
+        Не «первые восемь узлов», а выбор по категориям, которые нужны
+        разделу. Иначе в промпт попадали случайные факты и GraphRAG
+        только увеличивал контекст.
+        """
+        priorities = {
+            "established": ("claims", "evidence", "established_facts", "protocol_findings"),
+            "motivating": ("claims", "objections", "evidence", "legal_position"),
+            "operative": ("claims", "decision_items", "evidence"),
+            "descriptive": ("claims", "objections", "evidence"),
+        }.get(section_key, ("claims", "evidence", "legal_position"))
+
+        def rank(node: dict[str, Any]) -> tuple[int, int, int]:
+            kind = str(node.get("kind"))
+            category = str(node.get("category") or "")
+            try:
+                category_rank = priorities.index(category)
+            except ValueError:
+                category_rank = len(priorities)
+            kind_rank = {"fact": 0, "norm": 1, "amount": 2}.get(kind, 3)
+            return (category_rank, kind_rank, -len(str(node.get("text") or "")))
+
+        selected: list[dict[str, Any]] = []
+        for node in self.nodes.values():
+            kind = str(node.get("kind"))
+            if kind not in {"fact", "norm", "amount"}:
+                continue
+            if kind == "fact" and str(node.get("category") or "") not in priorities:
+                continue
+            selected.append(node)
+        selected.sort(key=rank)
+
         lines: list[str] = []
-        count = 0
-        for _node_id, node in self.nodes.items():
-            if node["kind"] not in wanted or node["kind"] == "case":
-                continue
+        seen: set[str] = set()
+        for node in selected:
             text = str(node.get("text") or "").strip()
-            if not text:
+            if not text or text in seen:
                 continue
+            seen.add(text)
             lines.append(f"[{node['kind']}] {text[:500]}")
-            count += 1
-            if count >= limit:
+            if len(lines) >= limit:
                 break
         return "\n".join(lines)
 
