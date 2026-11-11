@@ -166,7 +166,15 @@ def make_settings(provider: str, workdir: Path, model: str = "") -> Settings:
     с настоящей моделью должен быть настоящий и поиск, иначе замеры
     показывают поведение заглушки, а не системы.
     """
-    llm = LLMProviderName.MOCK if provider == "mock" else LLMProviderName.OLLAMA
+    if provider == "openai":
+        llm = LLMProviderName.OPENAI
+        ollama_enabled = False
+    elif provider == "ollama":
+        llm = LLMProviderName.OLLAMA
+        ollama_enabled = True
+    else:
+        llm = LLMProviderName.MOCK
+        ollama_enabled = False
     # При заглушке LLM эмбеддинги тоже оставляем заглушкой: иначе
     # прогон «мгновенный» стал бы ждать настоящую модель.
     embeddings = (
@@ -178,7 +186,7 @@ def make_settings(provider: str, workdir: Path, model: str = "") -> Settings:
         app_env="development",
         llm_provider=llm,
         embedding_provider=embeddings,
-        ollama_enabled=provider != "mock",
+        ollama_enabled=ollama_enabled,
         ollama_model=model or _model_from_env(),
         ollama_base_url="http://127.0.0.1:11434",
         ollama_timeout_sec=1800,
@@ -684,8 +692,11 @@ def court_reference_block(case_dir: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Демонстрация CourtDraft AI")
     parser.add_argument(
-        "--provider", choices=["ollama", "mock"], default="ollama",
-        help="ollama — реальная модель; mock — мгновенная заглушка",
+        "--provider", choices=["ollama", "openai", "mock"], default="ollama",
+        help=(
+            "ollama — локальная модель; openai — ZvenoAI/DeepSeek Flash; "
+            "mock — мгновенная заглушка"
+        ),
     )
     parser.add_argument(
         "--only-section", action="append", dest="sections",
