@@ -13,7 +13,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
+from collections import Counter, defaultdict
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +34,7 @@ from eval_deepseek_quality import (  # noqa: E402
 from app.agents.evidence_pack import load_template  # noqa: E402
 from app.config import LLMProviderName, Settings  # noqa: E402
 from app.llm import build_llm_provider  # noqa: E402
+from app.llm.base import LLMMessage, LLMRequest, LLMRole  # noqa: E402
 
 DEFAULT_CASES = ROOT / "artifacts" / "cd" / "synth" / "cases"
 DEFAULT_OUT = ROOT / "artifacts" / "cd" / "eval"
@@ -82,6 +86,181 @@ def _settings(provider: str, model: str, max_tokens: int) -> Settings:
     return base.model_copy(update=update)
 
 
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[а-яёa-z0-9]{3,}", (text or "").lower())
+
+
+def _token_f1(reference: str, generated: str) -> float:
+    ref = Counter(_tokens(reference))
+    got = Counter(_tokens(generated))
+    if not ref or not got:
+        return 0.0
+    overlap = sum((ref & got).values())
+    precision = overlap / sum(got.values())
+    recall = overlap / sum(ref.values())
+    return 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
+
+
+def _sequence_ratio(reference: str, generated: str) -> float:
+    return SequenceMatcher(None, (reference or "").lower(), (generated or "").lower()).ratio()
+
+
+def _citation_f1(reference: str, generated: str) -> float:
+    from cd_core import citations
+
+    ref = citations(reference)
+    got = citations(generated)
+    if not ref or not got:
+        return 0.0
+    overlap = len(ref & got)
+    precision = overlap / len(got)
+    recall = overlap / len(ref)
+    return 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
+
+
+def _amount_f1(reference: str, generated: str) -> float:
+    from cd_core import amounts_kop
+
+    ref = set(amounts_kop(reference))
+    got = set(amounts_kop(generated))
+    if not ref or not got:
+        return 0.0
+    overlap = len(ref & got)
+    precision = overlap / len(got)
+    recall = overlap / len(ref)
+    return 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
+
+
+def _task_prompt(task: dict[str, Any]) -> str:
+    labels = {
+        "requirements": "требования истца",
+        "plaintiff_arguments": "аргументы истца",
+        "defendant_arguments": "аргументы ответчика",
+        "evidence_assessment": "оценка судом доказательств",
+        "judge_logic": "логика рассуждений судьи",
+        "norms": "применимые нормы права",
+        "decision": "краткое содержание решения суда",
+    }
+    parts = [
+        "Ты — помощник судьи. По фрагментам судебного акта определи "
+        f"только блок «{labels.get(task['target'], task['target'])}».",
+        "Не добавляй факты, суммы и нормы, которых нет во входных данных.",
+        "Верни только текст этого блока, без пояснений и заголовков.",
+        "",
+        "ВХОД:",
+    ]
+    for name, text in task.get("input", {}).items():
+        parts.append(f"[{name}]")
+        parts.append(str(text))
+        parts.append("")
+    parts.append("ОТВЕТ:")
+    return "\n".join(parts)
+
+
+async def _run_blocks(args: argparse.Namespace) -> int:
+    tasks_path = Path(args.tasks)
+    if not tasks_path.exists():  # noqa: ASYNC240
+        print(f"нет файла заданий: {tasks_path}")
+        return 2
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))  # noqa: ASYNC240
+    if args.branches:
+        wanted = [item.strip().lower() for item in args.branches.split(",") if item.strip()]
+        tasks = [
+            task for task in tasks
+            if any(branch in str(task.get("category", "")).lower() for branch in wanted)
+        ]
+    if args.targets:
+        wanted_targets = {item.strip() for item in args.targets.split(",") if item.strip()}
+        tasks = [task for task in tasks if task.get("target") in wanted_targets]
+    if args.limit:
+        tasks = tasks[: args.limit]
+    if not tasks:
+        print("нет заданий после фильтра")
+        return 1
+
+    settings = _settings(args.provider, args.model, args.max_tokens)
+    if args.provider == "openai":
+        prices, error = fetch_prices(settings)
+        if error:
+            print(f"прайс: {error}")
+        provider: Any = make_provider(settings, budget_rub=args.budget_rub, prices=prices)
+        if not await provider.health():
+            print("openai недоступен")
+            return 2
+    else:
+        provider = CostlessProvider(build_llm_provider(settings))
+    print(f"blocks: {len(tasks)} заданий, провайдер {args.provider}")
+
+    results: list[dict[str, Any]] = []
+    for index, task in enumerate(tasks, start=1):
+        print(f"[{index}/{len(tasks)}] {task['case']} / {task['target']}")
+        try:
+            response = await provider.generate(
+                LLMRequest(
+                    messages=[LLMMessage(role="user", content=_task_prompt(task))],
+                    role=LLMRole.GENERATION,
+                    temperature=0.1,
+                    max_tokens=args.max_tokens or 700,
+                )
+            )
+            generated = response.text
+            error = ""
+        except Exception as exc:  # noqa: BLE001
+            generated = ""
+            error = f"{type(exc).__name__}: {exc}"
+            if "бюджет" in error.lower():
+                results.append({**task, "generated": "", "error": error, "score": 0.0})
+                break
+        reference = str(task.get("reference") or "")
+        score = _token_f1(reference, generated)
+        results.append(
+            {
+                **task,
+                "generated": generated,
+                "error": error,
+                "score": round(score, 4),
+                "sequence": round(_sequence_ratio(reference, generated), 4),
+                "citation_f1": round(_citation_f1(reference, generated), 4),
+                "amount_f1": round(_amount_f1(reference, generated), 4),
+            }
+        )
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240
+    payload = {
+        "mode": "blocks",
+        "provider": args.provider,
+        "tasks": len(results),
+        "spent_rub": round(float(getattr(provider, "spent_rub", 0.0)), 6),
+        "mean_score": round(
+            sum(item["score"] for item in results) / max(1, len(results)), 4
+        ),
+        "results": results,
+    }
+    (out / "report.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    by_target: dict[str, list[float]] = defaultdict(list)
+    for item in results:
+        by_target[str(item["target"])].append(float(item["score"]))
+    lines = [
+        "# CD eval: blocks",
+        "",
+        f"- Провайдер: `{args.provider}`",
+        f"- Заданий: {len(results)}",
+        f"- Средний token-F1: {payload['mean_score']:.4f}",
+        f"- Расход: {payload['spent_rub']:.4f} ₽",
+        "",
+        "| Блок | Заданий | Средний F1 |",
+        "|---|---:|---:|",
+    ]
+    for target, values in sorted(by_target.items()):
+        lines.append(f"| {target} | {len(values)} | {sum(values) / len(values):.4f} |")
+    (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"отчёт: {out / 'report.md'}")
+    return 0
+
+
 def _write_report(out: Path, items: list[Any], *, mode: str, provider: str, spent: float) -> None:
     out.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -116,6 +295,8 @@ def _write_report(out: Path, items: list[Any], *, mode: str, provider: str, spen
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.mode == "blocks":
+        return await _run_blocks(args)
     cases_dir = Path(args.cases)
     if not cases_dir.exists():  # noqa: ASYNC240
         print(f"нет каталога дел: {cases_dir}")
@@ -183,6 +364,9 @@ def main() -> int:
     parser.add_argument("--provider", choices=["mock", "ollama", "openai"], default="mock")
     parser.add_argument("--model", default="")
     parser.add_argument("--cases", default=str(DEFAULT_CASES))
+    parser.add_argument("--tasks", default=str(DEFAULT_CASES.parent / "tasks.json"))
+    parser.add_argument("--branches", default="")
+    parser.add_argument("--targets", default="")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument(

@@ -39,6 +39,44 @@ BLOCKS = {
     "краткое содержание окончательного решения": "decision",
 }
 
+BLOCK_INSTRUCTIONS = {
+    "requirements": "Определи требования истца по материалам дела.",
+    "plaintiff_arguments": "Определи аргументы истца по материалам дела.",
+    "defendant_arguments": "Определи аргументы ответчика по материалам дела.",
+    "evidence_assessment": "Определи оценку судом представленных доказательств.",
+    "judge_logic": "Определи логику рассуждений судьи и промежуточные выводы.",
+    "norms": "Определи применимые нормы права.",
+    "decision": "Сформулируй краткое содержание окончательного решения суда.",
+}
+
+# Что можно показывать модели, чтобы не подсунуть целевой блок или итог.
+BLOCK_INPUTS = {
+    "requirements": ("plaintiff_arguments", "defendant_arguments"),
+    "plaintiff_arguments": ("requirements", "defendant_arguments"),
+    "defendant_arguments": ("requirements", "plaintiff_arguments"),
+    "evidence_assessment": ("requirements", "plaintiff_arguments", "defendant_arguments"),
+    "judge_logic": (
+        "requirements",
+        "plaintiff_arguments",
+        "defendant_arguments",
+        "evidence_assessment",
+        "norms",
+    ),
+    "norms": (
+        "requirements",
+        "plaintiff_arguments",
+        "defendant_arguments",
+        "evidence_assessment",
+    ),
+    "decision": (
+        "requirements",
+        "plaintiff_arguments",
+        "defendant_arguments",
+        "evidence_assessment",
+        "norms",
+    ),
+}
+
 
 def download(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -154,6 +192,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     written = 0
     skipped: list[dict[str, str]] = []
+    tasks: list[dict[str, Any]] = []
     for key, item in selected:
         blocks = item.get("blocks") or {}
         materials = material_text(blocks)
@@ -175,6 +214,31 @@ def main() -> int:
         (case_dir / "02_response.txt").write_text(response, encoding="utf-8")
         (case_dir / "05_protocol.txt").write_text(protocol_text(), encoding="utf-8")
         (case_dir / "court_reference.txt").write_text(decision + "\n", encoding="utf-8")
+        for target, allowed_inputs in BLOCK_INPUTS.items():
+            reference = str(blocks.get(target) or "").strip()
+            if not reference:
+                continue
+            model_input = {
+                name: str(blocks.get(name) or "").strip()
+                for name in allowed_inputs
+                if str(blocks.get(name) or "").strip()
+            }
+            if not model_input:
+                continue
+            # Грубая, но обязательная проверка: целевой ответ не должен
+            # дословно лежать во входе.
+            if reference[:120].lower() in " ".join(model_input.values()).lower():
+                continue
+            tasks.append(
+                {
+                    "case": slug,
+                    "category": item.get("category", ""),
+                    "target": target,
+                    "instruction": BLOCK_INSTRUCTIONS[target],
+                    "input": model_input,
+                    "reference": reference,
+                }
+            )
         written += 1
 
     manifest = {
@@ -185,9 +249,13 @@ def main() -> int:
         "written": written,
         "skipped": skipped,
         "categories": dict(per_category),
+        "tasks": len(tasks),
     }
     (out.parent / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (out.parent / "tasks.json").write_text(
+        json.dumps(tasks, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0

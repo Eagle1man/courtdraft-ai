@@ -52,6 +52,31 @@ backend\.venv\Scripts\python.exe scripts\cd_eval.py --provider ollama --model qw
 backend\.venv\Scripts\python.exe scripts\cd_eval.py --provider ollama --model qwen2.5:1.5b --cases artifacts\cd\synth\cases --require-amounts --limit 3
 ```
 
+## Block-level бенчмарк
+
+`cd_synth.py` теперь пишет `artifacts/cd/synth/tasks.json` — **1 362 задания**
+по 7 блокам. Для каждого блока вход ограничен так, чтобы в него не попал
+целевой ответ, решение суда или логика судьи.
+
+`cd_eval.py --mode blocks`:
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\cd_eval.py --mode blocks `
+  --provider ollama --model qwen2.5:1.5b `
+  --tasks artifacts\cd\synth\tasks.json --limit 3
+```
+
+Smoke-результат:
+
+| Провайдер | Заданий | Средний token-F1 |
+|---|---:|---:|
+| mock | 3 | 0.0000 |
+| qwen2.5:1.5b | 3 | **0.0607** |
+
+По блокам у 1.5B: `requirements` — 0,0822, `plaintiff_arguments` — 0,0500,
+`defendant_arguments` — 0,0500. Это только smoke, не вывод о качестве:
+3 задания, одна модель, один прогон.
+
 ## Ограничения
 
 - Датасет размечен LLM, экспертные оценки 3,5–4,8/5; это не золотой стандарт.
