@@ -233,10 +233,27 @@ class TestRoleSwapping:
         for phrase in (
             "Истцу надлежит уплатить 150000 рублей.",
             "Истец должен перечислить 150000 рублей.",
-            "Истцом взыскано 150000 рублей.",
         ):
             findings = check_roles(phrase, "РЕШИЛ", make_pack())
             assert findings, f"не распознано: {phrase}"
+
+    def test_claimant_collecting_is_not_payer(self) -> None:
+        """«Истцом взыскано/удержано» — действие взыскателя, не платёж."""
+        for phrase in (
+            "Истцом взыскано 150000 рублей.",
+            "Истцом удержано из пенсии 802 рубля.",
+        ):
+            findings = check_roles(phrase, "РЕШИЛ", make_pack())
+            assert not any("плательщиком" in f.detail for f in findings)
+
+    def test_plaintiff_states_defendant_does_not_pay(self) -> None:
+        """Истец сообщает о неплатеже ответчика — плательщик ответчик."""
+        phrase = (
+            "Истец указал, что ответчик нарушает свои обязательства "
+            "по договору и не вносит абонентскую плату."
+        )
+        findings = check_roles(phrase, "Мотивировочная часть", make_pack())
+        assert not any("плательщиком" in f.detail for f in findings)
 
     def test_duplicates_collapsed(self) -> None:
         """Одна и та же находка не должна повторяться."""

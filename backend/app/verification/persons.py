@@ -397,12 +397,15 @@ def check_roles(text: str, section: str, pack: EvidencePack) -> list[RoleFinding
         # и того же дефекта.
         mentions = _plaintiff_mentions(sentence, roles_by_name)
         if mentions:
-            verb_positions = [
-                m.start() for m in re.finditer(rf"\b(?:{verbs})\b", sentence, re.IGNORECASE)
-            ]
-            first_verb = verb_positions[0] if verb_positions else None
+            verb_matches = list(
+                re.finditer(rf"\b(?:{verbs})\b", sentence, re.IGNORECASE)
+            )
+            first_verb = verb_matches[0].start() if verb_matches else None
+            first_verb_word = (
+                verb_matches[0].group(0).lower() if verb_matches else ""
+            )
 
-            position, _mention = mentions[0]
+            position, mention = mentions[0]
 
             # Истец — плательщик, только если он стоит ДО платёжного
             # глагола. В «ответчик обязан возместить истцу сумму» глагол
@@ -410,18 +413,29 @@ def check_roles(text: str, section: str, pack: EvidencePack) -> list[RoleFinding
             # На живом прогоне прежняя версия правила помечала такую
             # правильную фразу как CRITICAL.
             if first_verb is not None and position < first_verb:
-                fragment = f"{sentence[:90].strip()}"
-                if fragment not in seen:
-                    seen.add(fragment)
-                    findings.append(
-                        RoleFinding(
-                            detail=(
-                                f"истец указан плательщиком: «{fragment}». "
-                                "По делу истец взыскатель."
-                            ),
-                            section=section,
+                between = sentence[position:first_verb].lower()
+                has_defendant_between = any(
+                    re.search(rf"\b{form}\b", between) for form in DEFENDANT_FORMS
+                )
+                # «Истцом удержано/взыскано» — действие взыскателя (удержал,
+                # взыскал), а не истец-плательщик.
+                passive_agent = (
+                    mention.lower() in PLAINTIFF_PASSIVE
+                    and first_verb_word in {"удержано", "взыскано", "взыскивается"}
+                )
+                if not has_defendant_between and not passive_agent:
+                    fragment = f"{sentence[:90].strip()}"
+                    if fragment not in seen:
+                        seen.add(fragment)
+                        findings.append(
+                            RoleFinding(
+                                detail=(
+                                    f"истец указан плательщиком: «{fragment}». "
+                                    "По делу истец взыскатель."
+                                ),
+                                section=section,
+                            )
                         )
-                    )
 
         # 2. Взыскание предписано с истца.
         for match in COLLECT_FROM_RE.finditer(sentence):
