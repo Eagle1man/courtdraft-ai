@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -20,7 +20,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.config import EmbeddingProviderName, LLMProviderName, Settings
+from app.config import EmbeddingProviderName, LLMProviderName, Settings, get_settings
 from app.db.session import create_all, create_engine_and_session, drop_all
 from app.main import create_app
 from app.models.entities import Case, CaseStatus, DraftStatus
@@ -32,6 +32,23 @@ from app.services.jobs import JobRegistry, JobState
 _REAL_LAWS_DIR = Path(__file__).resolve().parent.parent / "data" / "laws"
 
 # ── Фикстуры ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _isolate_generation_flags(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Не наследовать флаги генерации из локального .env.
+
+    Тесты ниже подменяют ``generate_draft``/``verify_draft`` и проверяют
+    обычный путь. Если на машине включён ``MULTI_AGENT_ENABLED``,
+    ``DraftService`` уходит в pipeline, подмены не срабатывают и тесты
+    падают не из-за кода, а из-за окружения. Отдельный тест включает
+    pipeline явно.
+    """
+    monkeypatch.setenv("MULTI_AGENT_ENABLED", "false")
+    monkeypatch.setenv("GRAPHRAG_ENABLED", "false")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest_asyncio.fixture
@@ -251,6 +268,59 @@ class TestDraftGeneration:
         assert "Взыскать" in version.text
         assert report.sections_checked == 2
         assert pack.items
+
+    async def test_generate_uses_pipeline_when_enabled(
+        self,
+        session: AsyncSession,
+        prepared_case: uuid.UUID,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """При MULTI_AGENT_ENABLED=true сервис обязан идти через pipeline.
+
+        Иначе флаг включён, а приложение продолжает работать по старому
+        пути, и выигрыш pipeline из A/B не попадает в продукт.
+        """
+        from app.agents import pipeline as pipeline_module
+        from app.agents.pipeline import PipelineResult
+        from app.graphrag import KnowledgeGraph
+        from app.services import draft_service as module
+        from app.verification.engine import verify_draft
+
+        calls: list[str] = []
+
+        async def _fake_pipeline(pack, template, *, provider=None, settings=None):  # noqa: ANN001, ANN202
+            calls.append("pipeline")
+            draft = await _fake_generate(prepared_case)(
+                pack, template, provider=provider, settings=settings
+            )
+            return PipelineResult(
+                draft=draft,
+                verification=verify_draft(draft, pack, settings),
+                graph=KnowledgeGraph.from_pack(pack),
+                stages=[
+                    "research",
+                    "verify_materials",
+                    "synthesize",
+                    "generate",
+                    "review",
+                ],
+            )
+
+        async def _unexpected_generate(*args, **kwargs):  # noqa: ANN001, ANN202
+            raise AssertionError("DraftService обошёл включённый pipeline")
+
+        monkeypatch.setenv("MULTI_AGENT_ENABLED", "true")
+        get_settings.cache_clear()
+        monkeypatch.setattr(pipeline_module, "run_pipeline", _fake_pipeline)
+        monkeypatch.setattr(module, "generate_draft", _unexpected_generate)
+
+        draft, version, report, _pack = await DraftService(session).generate(prepared_case)
+
+        assert calls == ["pipeline"]
+        assert draft.id is not None
+        assert version.version == 1
+        assert "Взыскать" in version.text
+        assert report.sections_checked == 2
 
     async def test_template_follows_case_type(self, session: AsyncSession, prepared_case: uuid.UUID, monkeypatch) -> None:  # noqa: ANN001
         """Арбитражное дело получает арбитражный шаблон, а не гражданский.
