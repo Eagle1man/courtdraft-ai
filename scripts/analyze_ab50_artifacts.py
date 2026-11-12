@@ -110,9 +110,9 @@ def date_only_issue(issue: dict[str, Any], draft_text: str) -> bool:
 def recompute_p0(
     case: dict[str, Any],
 ) -> tuple[list[str], list[dict[str, Any]], list[dict[str, Any]]]:
-    """P0 после снятия дата-ложных замечаний.
+    """P0 после снятия ложных замечаний по числам из дат/ссылок.
 
-    Некрит­ические причины (пустой раздел, незаполненная резолюция)
+    Некритические причины (пустой раздел, незаполненная резолюция)
     берутся из артефакта как есть: они не зависят от проверки чисел.
     Критические пересобираются из отфильтрованных issues.
     """
@@ -314,9 +314,9 @@ def write_markdown(runs: dict[str, dict[str, Any]], out: Path) -> None:
     lines.append("- Вызовов модели: 0 — только сохранённые артефакты")
     lines.append(
         "- P0 пересчитан по `verification.issues`; сняты только "
-        "`UNSUPPORTED_CLAIM`, где все числа — части дат "
-        "(`24.03.2016`, `24 марта 2016 года`). Верификатор заново "
-        "не запускался."
+        "`UNSUPPORTED_CLAIM`, где все числа — части дат/правовых ссылок "
+        "(например `24.03.2016`, `ст. 56, 60 ГПК РФ`, `№ 173-ФЗ`). "
+        "Верификатор заново не запускался."
     )
     lines.append(
         "- Citation F1: проект против `06_court_findings.txt` + резолюция. "
@@ -369,7 +369,7 @@ def write_markdown(runs: dict[str, dict[str, Any]], out: Path) -> None:
         lines.append("- Критических замечаний не осталось.")
     lines.append("")
 
-    lines.append("## Снятые ложные P0 (даты)")
+    lines.append("## Снятые ложные P0 (даты и ссылки)")
     lines.append("")
     for name, run in runs.items():
         numbers = ", ".join(
@@ -470,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "method": {
-            "p0": "stored issues; date-only UNSUPPORTED_CLAIM removed",
+            "p0": "stored issues; date/law-reference-only UNSUPPORTED_CLAIM removed",
             "citation": "draft_text vs 06_court_findings.txt + court_reference.txt",
             "amounts": "unique integer rubles from operative vs reference",
         },

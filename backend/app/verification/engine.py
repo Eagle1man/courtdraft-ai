@@ -232,6 +232,27 @@ _DATE_RE = re.compile(
     r"|\b(?:19|20)\d{2}\s*(?:год(?:а|у|ом)?|г\.)",
     re.IGNORECASE,
 )
+
+#: Номера в правовых ссылках (статьи, пункты, части, акты) — не суммы.
+#: «ст. 56, 60 ГПК РФ», «п. 4 ст. 23 ФЗ № 173-ФЗ» — 56,60,4,23,173
+#: не должны помечаться как выдуманные числа.
+_ARTICLE_HEAD_RE = re.compile(
+    r"(?:ст\.|стат(?:ьёй|ьей|ей|ье|ьи|ью|ьями|ьях|ьям|ьё|и)\.?)\s*"
+    r"\d+(?:\.\d+)*(?:\s*(?:,|и|–|—|-)\s*\d+(?:\.\d+)*)*",
+    re.IGNORECASE,
+)
+_REF_MARKER_RE = re.compile(
+    r"\b(?:пп?|ч|част|абз)\.\s*\d+(?:\.\d+)*"
+    r"|\b№\s*\d+[\w./-]*"
+    r"|\b\d+-ФЗ\b",
+    re.IGNORECASE,
+)
+_CODE_TAIL_RE = re.compile(
+    r"\s+(?:ГПК|ГК|ЖК|НК|СК|ТК|УПК|УК|КАС|АПК|КоАП|БК|ЗК)\s*РФ\b"
+    r"|\s+[А-ЯЁа-яё]{2,}(?:\s+[А-ЯЁа-яё]{2,}){0,3}\s+кодекс\w*"
+    r"(?:\s+РФ|\s+Российской\s+Федерации)?",
+    re.IGNORECASE,
+)
 # Ссылки на нормы. Учитываются падежные формы: «статья 310», «статьи 310»,
 # «статье 310», «статью 310», «ст. 310», «п. 1 ст. 486». Без «статье»
 # ссылка не распознавалась вовсе, и выдуманная норма проходила проверку.
@@ -268,19 +289,35 @@ _FEE_IN_PRICE_RE = re.compile(
 )
 
 
+def _reference_spans(text: str) -> list[tuple[int, int]]:
+    """Участки дат и правовых ссылок, где числа — не суммы дела."""
+    spans = [match.span() for match in _DATE_RE.finditer(text)]
+    for match in _ARTICLE_HEAD_RE.finditer(text):
+        end = match.end()
+        tail = _CODE_TAIL_RE.match(text, end)
+        if tail:
+            end = tail.end()
+        spans.append((match.start(), end))
+    for match in _REF_MARKER_RE.finditer(text):
+        spans.append(match.span())
+    for match in _LAW_RE.finditer(text):
+        spans.append(match.span())
+    return spans
+
+
 def is_date_only_number(text: str, number: str) -> bool:
-    """True, если все вхождения числа — части дат, а не самостоятельные факты.
+    """True, если все вхождения числа — части дат или ссылок, а не суммы.
 
     Нужно для разбора уже сохранённых отчётов: пересчитать проверку без
-    повторного вызова модели. В новом коде даты вырезаются в
+    повторного вызова модели. В новом коде такие числа вырезаются в
     :func:`_numbers_in`, а здесь проверяется, что число не встречается
-    ещё где-то как сумма.
+    ещё где-то как самостоятельный факт.
     """
     pattern = rf"(?<!\d){re.escape(number)}(?!\d)"
     occurrences = [match.start() for match in re.finditer(pattern, text)]
     if not occurrences:
         return False
-    spans = [match.span() for match in _DATE_RE.finditer(text)]
+    spans = _reference_spans(text)
     return all(
         any(start <= position < end for start, end in spans)
         for position in occurrences
@@ -295,12 +332,15 @@ def _numbers_in(text: str) -> set[str]:
     Это не суммы, и проверка не должна кричать «выдуманное число»
     на каждый ИНН в тексте.
 
-    Даты вырезаются целиком: «24.03.2016» — это ссылка на постановление
-    Пленума, а не сумма 2016. Иначе корректная правовая ссылка давала
-    CRITICAL и топила настоящие выдумки.
+    Даты и номера в правовых ссылках вырезаются: «24.03.2016»,
+    «ст. 56, 60 ГПК РФ», «№ 173-ФЗ» — это не суммы дела.
     """
+    masked = list(text)
+    for start, end in _reference_spans(text):
+        for index in range(start, end):
+            masked[index] = " "
     out: set[str] = set()
-    for raw in _NUM_RE.findall(_DATE_RE.sub(" ", text)):
+    for raw in _NUM_RE.findall("".join(masked)):
         digits = re.sub(r"[^\d]", "", raw)
         if len(digits) < 2:
             continue

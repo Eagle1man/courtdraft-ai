@@ -381,6 +381,55 @@ class TestVerification:
         assert is_date_only_number("постановление от 24.03.2016 № 7", "2016")
         assert not is_date_only_number("взыскать 2016 рублей", "2016")
 
+    def test_law_article_numbers_not_flagged_as_invented(self) -> None:
+        """Номера статей в ссылках — не суммы и не выдумка модели."""
+        pack = make_pack()
+        draft = DraftResult(
+            case_number="DEMO-001",
+            sections=[
+                SectionDraft(
+                    key="motivating",
+                    name="Мотивировочная часть",
+                    text=(
+                        "В силу статей 56, 60 ГПК РФ и статьи 162 ГК РФ "
+                        "несоблюдение простой письменной формы не лишает права."
+                    ),
+                    is_mock=False,
+                    citations=["01_claim.txt"],
+                )
+            ],
+        )
+        report = verify_draft(draft, pack)
+        invented = [
+            issue for issue in report.issues
+            if issue.type is IssueType.UNSUPPORTED_CLAIM
+        ]
+        assert not any("56" in issue.reason for issue in invented)
+        assert not any("60" in issue.reason for issue in invented)
+        assert not any("162" in issue.reason for issue in invented)
+
+    def test_law_number_fz_not_flagged_as_invented(self) -> None:
+        pack = make_pack()
+        draft = DraftResult(
+            case_number="DEMO-001",
+            sections=[
+                SectionDraft(
+                    key="motivating",
+                    name="Мотивировочная часть",
+                    text="в соответствии с ФЗ № 173-ФЗ и п. 4 ст. 23",
+                    is_mock=False,
+                    citations=["01_claim.txt"],
+                )
+            ],
+        )
+        report = verify_draft(draft, pack)
+        invented = [
+            issue for issue in report.issues
+            if issue.type is IssueType.UNSUPPORTED_CLAIM
+        ]
+        assert not any("173" in issue.reason for issue in invented)
+        assert not any("23" in issue.reason for issue in invented)
+
     def test_detects_unsupported_law(self) -> None:
         pack = make_pack()
         draft = DraftResult(
