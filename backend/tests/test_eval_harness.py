@@ -68,7 +68,14 @@ class TestLaws:
 
     def test_leading_part_and_range(self) -> None:
         laws = harness.laws_in("ч. 1 ст. 320-322 ГПК РФ не применяется")
-        assert "320-322 ГПК РФ" in laws
+        assert {"320 ГПК РФ", "321 ГПК РФ", "322 ГПК РФ"} <= set(laws)
+
+    def test_range_dash_and_bounds_do_not_break_overlap(self) -> None:
+        # Суд: «194-198», проект: «194–199». Это пересечение статей,
+        # а не разные нормы из-за типа тире.
+        system = harness.laws_in("ст. 194–199 ГПК РФ")
+        court = harness.laws_in("ст. 194-198 ГПК РФ")
+        assert len(system.keys() & court.keys()) == 5
 
     def test_duplicate_mentions_collapse(self) -> None:
         laws = harness.laws_in("ст. 98 ГПК РФ, а также ст. 98 ГПК РФ")
@@ -81,6 +88,34 @@ class TestLaws:
         assert diff["both"] == ["ст. 98 ГПК РФ"]
         assert diff["system_only"] == ["ст. 103 ГПК РФ"]
         assert diff["court_only"] == ["ст. 198 ГПК РФ"]
+
+    def test_full_code_name_is_normalized(self) -> None:
+        # Суд пишет «Гражданского кодекса РФ», проект — «ГК РФ».
+        # Без нормализации это две разные нормы и ложный ноль в F1.
+        laws = harness.laws_in("ст. 548 Гражданского кодекса РФ")
+        assert "548 ГК РФ" in laws
+
+    def test_full_procedural_code_is_normalized(self) -> None:
+        laws = harness.laws_in(
+            "ст. 194 Гражданского процессуального кодекса РФ"
+        )
+        assert "194 ГПК РФ" in laws
+
+    def test_multi_article_list(self) -> None:
+        laws = harness.laws_in("ст. 56, 67 ГПК РФ")
+        assert set(laws) == {"56 ГПК РФ", "67 ГПК РФ"}
+
+    def test_article_conjunction_list(self) -> None:
+        laws = harness.laws_in("статьями 309, 310 и 314 ГК РФ")
+        assert set(laws) == {"309 ГК РФ", "310 ГК РФ", "314 ГК РФ"}
+
+    def test_housing_code_is_recognized(self) -> None:
+        laws = harness.laws_in("ст. 155 Жилищного кодекса РФ")
+        assert "155 ЖК РФ" in laws
+
+    def test_reference_without_code_is_skipped(self) -> None:
+        # «ст. 5 Закона» — не кодекс; выдумывать кодекс нельзя.
+        assert harness.laws_in("ст. 5 Закона") == {}
 
 
 class TestRubAmounts:
@@ -103,6 +138,50 @@ class TestRubAmounts:
     def test_context_is_attached(self) -> None:
         amounts = harness.rub_amounts("госпошлину в размере 444 руб. уплачен")
         assert amounts and "444" in amounts[0][1]
+
+    def test_comma_space_kopecks_keep_rubles(self) -> None:
+        # В реальных решениях встречается «1 561, 37 руб.»: пробел после
+        # запятой не должен превращать копейки в самостоятельную сумму.
+        amounts = harness.rub_amounts("госпошлина в размере 1 561, 37 руб.")
+        assert [value for value, _context in amounts] == [1561]
+
+    def test_parenthetical_total(self) -> None:
+        # «46 940 (сорок шесть тысяч девятьсот сорок) руб.» — итог
+        # с расшифровкой; раньше он выпадал из сверки.
+        amounts = harness.rub_amounts(
+            "итого 46 940 (сорок шесть тысяч девятьсот сорок) руб."
+        )
+        assert [value for value, _context in amounts] == [46940]
+
+    def test_kopeck_fragment_not_a_separate_amount(self) -> None:
+        amounts = harness.rub_amounts("1 561, 37 руб.")
+        assert 37 not in [value for value, _context in amounts]
+
+
+class TestAmountMetrics:
+    """Сверка по множествам: повторы не завышают знаменатель."""
+
+    def test_duplicates_collapse(self) -> None:
+        court = [(45379, ""), (25000, ""), (45379, "")]
+        system = [(25000, ""), (45379, ""), (45379, "")]
+        metrics = harness.amount_metrics(court, system)
+        assert metrics["court_count"] == 2
+        assert metrics["system_count"] == 2
+        assert metrics["f1"] == 1.0
+        assert metrics["full_coverage"]
+
+    def test_missing_sum_lowers_recall(self) -> None:
+        metrics = harness.amount_metrics([(100, ""), (200, "")], [(100, "")])
+        assert metrics["recall"] == 0.5
+        assert metrics["precision"] == 1.0
+        assert metrics["f1"] == 0.6667
+        assert not metrics["full_coverage"]
+
+    def test_empty_court_has_zero_metrics(self) -> None:
+        metrics = harness.amount_metrics([], [(100, "")])
+        assert metrics["recall"] == 0.0
+        assert metrics["precision"] == 0.0
+        assert metrics["f1"] == 0.0
 
 
 class TestFoundIn:

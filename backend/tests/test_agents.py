@@ -296,6 +296,91 @@ class TestVerification:
         report = verify_draft(draft, pack)
         assert report.unsupported_claims == 0
 
+    def test_plenum_date_not_flagged_as_invented_amount(self) -> None:
+        """Год в дате постановления Пленума — не выдуманная сумма.
+
+        На 50 делах «24.03.2016» давало 27 из 31 ложных CRITICAL
+        UNSUPPORTED_CLAIM: проверка чисел видела в годе отдельное число.
+        """
+        pack = make_pack()
+        draft = DraftResult(
+            case_number="DEMO-001",
+            sections=[
+                SectionDraft(
+                    key="motivating",
+                    name="Мотивировочная часть",
+                    text=(
+                        "В силу п. 48 постановления Пленума Верховного Суда "
+                        "РФ от 24.03.2016 № 7 проценты по ст. 395 ГК РФ "
+                        "не являются неустойкой."
+                    ),
+                    is_mock=False,
+                    citations=["01_claim.txt"],
+                )
+            ],
+        )
+        report = verify_draft(draft, pack)
+        invented = [
+            issue for issue in report.issues
+            if issue.type is IssueType.UNSUPPORTED_CLAIM
+        ]
+        assert not any("2016" in issue.reason for issue in invented)
+
+    def test_written_date_not_flagged_as_invented_amount(self) -> None:
+        pack = make_pack()
+        draft = DraftResult(
+            case_number="DEMO-001",
+            sections=[
+                SectionDraft(
+                    key="motivating",
+                    name="Мотивировочная часть",
+                    text=(
+                        "Суд руководствуется разъяснениями, данными "
+                        "24 марта 2016 года."
+                    ),
+                    is_mock=False,
+                    citations=["01_claim.txt"],
+                )
+            ],
+        )
+        report = verify_draft(draft, pack)
+        invented = [
+            issue for issue in report.issues
+            if issue.type is IssueType.UNSUPPORTED_CLAIM
+        ]
+        assert not any("2016" in issue.reason for issue in invented)
+
+    def test_invented_amount_still_flagged_next_to_date(self) -> None:
+        """Маска дат не должна скрывать настоящую выдуманную сумму."""
+        pack = make_pack()
+        draft = DraftResult(
+            case_number="DEMO-001",
+            sections=[
+                SectionDraft(
+                    key="operative",
+                    name="РЕШИЛ",
+                    text=(
+                        "Взыскать 999 999 рублей, как разъяснено в "
+                        "постановлении от 24.03.2016 № 7."
+                    ),
+                    is_mock=False,
+                    citations=["01_claim.txt"],
+                )
+            ],
+        )
+        report = verify_draft(draft, pack)
+        invented = [
+            issue for issue in report.issues
+            if issue.type is IssueType.UNSUPPORTED_CLAIM
+        ]
+        assert any("999" in issue.reason for issue in invented)
+
+    def test_date_only_number_helper(self) -> None:
+        from app.verification.engine import is_date_only_number
+
+        assert is_date_only_number("постановление от 24.03.2016 № 7", "2016")
+        assert not is_date_only_number("взыскать 2016 рублей", "2016")
+
     def test_detects_unsupported_law(self) -> None:
         pack = make_pack()
         draft = DraftResult(

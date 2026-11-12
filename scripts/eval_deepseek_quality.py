@@ -315,14 +315,43 @@ def _outcome_of(text: str) -> list[str]:
     return found
 
 
-def compare_with_reference(draft: DraftResult, operative: str, reference: str) -> dict[str, Any]:
+def load_citation_reference(case_dir: Path, reference: str) -> str:
+    """Полный текст решения для citation F1, без утечки в генерацию.
+
+    ``06_court_findings.txt`` — установленные судом обстоятельства и
+    мотивировка. ``eval_draft.load_case`` намеренно не отдаёт этот файл
+    модели (иначе она увидит готовый исход), но для оценки он нужен:
+    в одной резолюции статей почти нет.
+    """
+    findings = case_dir / "06_court_findings.txt"
+    if not findings.exists():
+        return reference
+    text = findings.read_text(encoding="utf-8").strip()
+    return f"{text}\n\n{reference}".strip() if text else reference
+
+
+def compare_with_reference(
+    draft: DraftResult,
+    operative: str,
+    reference: str,
+    citation_reference: str = "",
+) -> dict[str, Any]:
+    """Сверить проект с резолюцией суда и с полным текстом решения.
+
+    ``reference`` — резолютивная часть: по ней считаются исход и суммы.
+    ``citation_reference`` — установленные судом обстоятельства плюс
+    резолюция: только там есть правовые ссылки, по которым считается
+    citation F1. Раньше F1 считался по одной резолюции и всегда был
+    нулевым, хотя статьи в проекте были.
+    """
     system_outcome = _outcome_of(operative)
     court_outcome = _outcome_of(reference)
     system_laws = eh.laws_in(draft.text)
-    court_laws = eh.laws_in(reference)
+    court_laws = eh.laws_in(citation_reference or reference)
     laws = eh.laws_diff(system_laws, court_laws)
     court_amounts = eh.rub_amounts(reference)
     system_amounts = eh.rub_amounts(operative)
+    amounts = eh.amount_metrics(court_amounts, system_amounts)
     return {
         "outcome_system": system_outcome,
         "outcome_court": court_outcome,
@@ -334,10 +363,8 @@ def compare_with_reference(draft: DraftResult, operative: str, reference: str) -
         "laws_court_only": len(laws["court_only"]),
         "court_amounts": [amount for amount, _ in court_amounts],
         "system_amounts": [amount for amount, _ in system_amounts],
-        "court_amounts_found": sorted(
-            {amount for amount, _ in court_amounts}
-            & {amount for amount, _ in system_amounts}
-        ),
+        "court_amounts_found": amounts["found"],
+        **amounts,
     }
 
 
@@ -402,7 +429,12 @@ async def evaluate_case(
             verify_report = verify_draft(draft, pack)
         summary = assess(draft, pack, case_dir.name, joined, reference)
         operative = operative_text_of(draft)
-        comparison = compare_with_reference(draft, operative, reference)
+        comparison = compare_with_reference(
+            draft,
+            operative,
+            reference,
+            load_citation_reference(case_dir, reference),
+        )
         item.provider = draft.provider
         item.model = draft.model
         item.sections = section_rows(draft)

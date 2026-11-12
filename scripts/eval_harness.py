@@ -59,16 +59,101 @@ OUTCOME_MARKERS: tuple[tuple[str, str], ...] = (
     ("обязать", "обязательство для стороны"),
 )
 
-#: «ст. 98 ГПК РФ», «ст.333.19 НК РФ», «ч. 1 ст. 320-322 ГПК РФ».
-LAW_RE = re.compile(
-    r"ст\.\s*(\d+(?:\.\d+)*(?:\s*[-–]\s*\d+)*)\s+"
-    r"([А-ЯЁ][А-ЯЁа-яё]{1,}(?:\s+[А-ЯЁ][А-ЯЁа-яё]{1,})?)"
+#: Номер статьи: «98», «333.19», «320-322».
+_ARTICLE = r"\d+(?:\.\d+)*(?:\s*[-–—]\s*\d+(?:\.\d+)*)?"
+
+#: «ст. 98 ГПК РФ», «статьями 309, 310 и 314 ГК РФ», «ч. 1 ст. 320-322 ГПК РФ».
+#: Падежные формы и списки статей важны для citation F1: суд пишет
+#: «статьи 56, 67 ГПК РФ», и без разбора списка обе ссылки выпадали.
+LAW_HEAD_RE = re.compile(
+    rf"(?:ст\.|стат(?:ья|ьи|ье|ью|ьёй|ьей|ьями|ьях|ьям|ьё|и)\.?)\s*"
+    rf"({_ARTICLE}(?:\s*(?:,|и)\s*{_ARTICLE})*)",
+    re.IGNORECASE,
 )
+
+#: Полные названия кодексов: суд часто пишет «Гражданского кодекса РФ»,
+#: а проект — «ГК РФ». Без нормализации это две разные нормы, и F1
+#: падал почти до нуля на корректных ссылках.
+_CODE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(pattern, re.IGNORECASE), code)
+    for pattern, code in (
+        (
+            r"гражданск[а-яё-]*\s+процессуальн[а-яё-]*\s+кодекс[а-яё-]*",
+            "ГПК РФ",
+        ),
+        (r"гражданск[а-яё-]*\s+кодекс[а-яё-]*", "ГК РФ"),
+        (r"жилищн[а-яё-]*\s+кодекс[а-яё-]*", "ЖК РФ"),
+        (r"налогов[а-яё-]*\s+кодекс[а-яё-]*", "НК РФ"),
+        (r"семейн[а-яё-]*\s+кодекс[а-яё-]*", "СК РФ"),
+        (r"трудов[а-яё-]*\s+кодекс[а-яё-]*", "ТК РФ"),
+        (
+            r"уголовн[а-яё-]*\s+процессуальн[а-яё-]*\s+кодекс[а-яё-]*",
+            "УПК РФ",
+        ),
+        (r"уголовн[а-яё-]*\s+кодекс[а-яё-]*", "УК РФ"),
+        (
+            r"кодекс[а-яё-]*\s+об\s+административн[а-яё-]*\s+"
+            r"правонарушени[а-яё-]*",
+            "КОАП РФ",
+        ),
+        (
+            r"арбитражн[а-яё-]*\s+процессуальн[а-яё-]*\s+кодекс[а-яё-]*",
+            "АПК РФ",
+        ),
+        (r"бюджетн[а-яё-]*\s+кодекс[а-яё-]*", "БК РФ"),
+        (r"земельн[а-яё-]*\s+кодекс[а-яё-]*", "ЗК РФ"),
+        (
+            r"кодекс[а-яё-]*\s+административн[а-яё-]*\s+"
+            r"судопроизводств[а-яё-]*",
+            "КАС РФ",
+        ),
+    )
+)
+
+#: Аббревиатуры кодексов: «ГК РФ», «КоАП РФ».
+_CODE_ABBR_RE = re.compile(
+    r"\b(ГПК|ГК|ЖК|НК|СК|ТК|УПК|УК|КОАП|АПК|БК|ЗК|КАС)\s*РФ\b",
+    re.IGNORECASE,
+)
+
+
+def _code_after(text: str, start: int) -> str:
+    """Кодекс сразу после номера статьи, в каноническом виде «ГК РФ».
+
+    Окно ограничено предложением: иначе «ст. 98» в одном предложении
+    притянуло бы кодекс из следующего.
+    """
+    tail = text[start : start + 90]
+    cut = re.search(r"[.;]\s", tail)
+    if cut:
+        tail = tail[: cut.start()]
+    for pattern, code in _CODE_PATTERNS:
+        if pattern.search(tail):
+            return code
+    abbr = _CODE_ABBR_RE.search(tail)
+    if abbr:
+        return f"{abbr.group(1).upper()} РФ"
+    return ""
 
 #: Рублёвые суммы: «11 551 руб.», «472 рубля», «11551,84 руб.».
 #: Копейки после запятой в значение не входят — считается целая часть,
 #: копейки видны в контексте. Иначе «11551,84» давало бы 1155184.
-RUB_RE = re.compile(r"(\d[\d\s ]{0,20}[.,]?\d{0,2})\s*(?:рубл\w*|руб\.?)", re.I)
+#:
+#: Сумма может быть записана с расшифровкой в скобках:
+#: «46 940 (сорок шесть тысяч девятьсот сорок) руб.». Без этой ветки
+#: итоговая сумма выпадала, и сверка показывала ложный ноль.
+#:
+#: Запрет старта после «, »/«. » не даёт принять копейки за рубли:
+#: в «1561, 37 руб.» сумма — 1561, а не 37. Пробел после запятой
+#: допускается: в решениях встречается «1 561, 37 руб.», и без этого
+#: ветки сумма выпадала целиком.
+RUB_RE = re.compile(
+    r"(?<!\d)(?<!\d[.,]\s)(?<!\d\s)"
+    r"(\d[\d\s ]{0,20}(?:[.,]\s*\d{1,2})?)"
+    r"\s*(?:\([^)]{0,80}\)\s*)?"
+    r"(?:рубл\w*|руб\.?)",
+    re.I,
+)
 
 NEEDS_REVIEW = "ТРЕБУЕТ ПРОВЕРКИ СПЕЦИАЛИСТОМ"
 
@@ -93,14 +178,40 @@ def outcome_of(text: str) -> list[str]:
     return found
 
 
+def _article_numbers(raw: str) -> list[str]:
+    """Номера статьи: диапазон «194–199» — это статьи 194…199.
+
+    Суд и проект по-разному ставят тире и границы диапазона
+    («194–199» и «194-198»). Сравнение строк давало ложный ноль,
+    хотя ссылки пересекаются. Слишком длинный диапазон не разворачиваем:
+    это защита от опечатки, а не статья закона.
+    """
+    match = re.fullmatch(r"(\d+)\s*[-–—]\s*(\d+)", raw.strip())
+    if match:
+        start, end = int(match.group(1)), int(match.group(2))
+        if 0 <= end - start <= 30:
+            return [str(number) for number in range(start, end + 1)]
+    number = re.sub(r"\s+", "", raw)
+    return [number] if number else []
+
+
 def laws_in(text: str) -> dict[str, str]:
-    """Статьи, упомянутые в тексте: ключ вида «98 ГПК РФ» -> как в тексте."""
+    """Статьи, упомянутые в тексте: ключ вида «98 ГПК РФ» -> как в тексте.
+
+    Кодекс берётся сразу после номера статьи и приводится к аббревиатуре:
+    «Гражданского кодекса РФ» и «ГК РФ» — одна норма. Список статей
+    («ст. 56, 67 ГПК РФ») разворачивается в две ссылки, диапазон
+    («ст. 194–199») — в статьи 194…199.
+    """
     laws: dict[str, str] = {}
-    for match in LAW_RE.finditer(text):
-        number = re.sub(r"\s+", "", match.group(1))
-        code = re.sub(r"\s+", " ", match.group(2).strip())
-        key = f"{number} {code}".upper()
-        laws.setdefault(key, f"ст. {number} {code}")
+    for match in LAW_HEAD_RE.finditer(text):
+        code = _code_after(text, match.end())
+        if not code:
+            continue
+        for raw in re.split(r"\s*(?:,|и)\s*", match.group(1)):
+            for number in _article_numbers(raw):
+                key = f"{number} {code}".upper()
+                laws.setdefault(key, f"ст. {number} {code}")
     return laws
 
 
@@ -135,6 +246,36 @@ def found_in(value: float, amounts: list[tuple[int, str]]) -> bool:
     """Есть ли точное число среди сумм решения суда (число на число)."""
     target = int(round(value))
     return any(abs(amount - target) <= 1 for amount, _context in amounts)
+
+
+def amount_metrics(
+    court_amounts: list[tuple[int, str]],
+    system_amounts: list[tuple[int, str]],
+) -> dict[str, Any]:
+    """Полнота и точность по уникальным суммам, а не по повторам.
+
+    Повторы в резолюции («45 379» дважды) раньше завышали знаменатель,
+    а копейки («37» из «1561, 37 руб.») — числитель. Здесь сравниваются
+    множества целых рублей; назначение суммы по-прежнему читает человек.
+    """
+    court = {amount for amount, _context in court_amounts}
+    system = {amount for amount, _context in system_amounts}
+    found = court & system
+    recall = len(found) / len(court) if court else 0.0
+    precision = len(found) / len(system) if system else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {
+        "court_unique": sorted(court),
+        "system_unique": sorted(system),
+        "found": sorted(found),
+        "court_count": len(court),
+        "system_count": len(system),
+        "found_count": len(found),
+        "recall": round(recall, 4),
+        "precision": round(precision, 4),
+        "f1": round(f1, 4),
+        "full_coverage": bool(court) and court <= system,
+    }
 
 
 def _checkbox_lines(options: tuple[str, ...]) -> list[str]:
