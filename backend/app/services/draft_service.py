@@ -441,8 +441,8 @@ class DraftService:
         уже выполнена против настоящего пакета доказательств, и повторный
         прогон против урезанных данных дал бы другой, менее строгий ответ.
         """
-        draft = await self.drafts.get_for_case(case_id, kind=kind)
         kind = (document_kind or "judgment").strip().lower() or "judgment"
+        draft = await self.drafts.get_for_case(case_id, kind=kind)
         if draft is None:
             draft = await self.drafts.create(
                 case_id,
@@ -510,8 +510,8 @@ class DraftService:
 
     # ── Чтение ────────────────────────────────────────────────
 
-    async def get_draft_for_case(self, case_id: uuid.UUID) -> Draft | None:
-        return await self.drafts.get_for_case(case_id)
+    async def get_draft_for_case(self, case_id: uuid.UUID, kind: str | None = None) -> Draft | None:
+        return await self.drafts.get_for_case(case_id, kind=kind)
 
     async def list_versions(self, draft_id: uuid.UUID) -> list[DraftVersion]:
         return await self.drafts.list_versions(draft_id)

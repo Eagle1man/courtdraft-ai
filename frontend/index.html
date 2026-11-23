@@ -13,7 +13,7 @@
   работает». При смене версии приложения метка меняется здесь же —
   иначе статику придётся чистить вручную у каждого зрителя.
 -->
-<link rel="stylesheet" href="styles.css?v=0.3.2">
+<link rel="stylesheet" href="styles.css?v=0.3.8">
 </head>
 <body>
 
@@ -65,6 +65,7 @@
 </div>
 
 <div class="notice demo-banner" id="demo-banner" hidden></div>
+      <div class="notice critical-banner" id="critical-banner" hidden></div>
 
 <!-- Код участника спрашивается до начала работы. Без него сервер отдаёт
      все дела (пустой код = режим администратора), а дело, созданное без
@@ -156,6 +157,13 @@
           </p>
         </div>
       </section>
+
+      <section class="panel" id="passport-panel" hidden>
+        <div class="pad">
+          <p class="label">Паспорт дела</p>
+          <div id="passport-body"></div>
+        </div>
+      </section>
     </div>
 
     <!-- ═══ Правая колонка: проект ═══ -->
@@ -170,10 +178,22 @@
           </div>
         </div>
         <div class="tools">
+          <!-- Вид документа. «Решение суда» — прежнее поведение по умолчанию. -->
+          <label class="kind-switch" title="Что готовим: решение суда или исковое заявление">
+            <span class="muted small">Документ</span>
+            <select id="doc-kind">
+              <option value="judgment">Решение суда</option>
+              <option value="claim">Исковое заявление (истец)</option>
+            </select>
+          </label>
           <button class="btn" id="btn-feedback" hidden
                   title="Оставить отзыв о проекте и решении по делу">★ Обратная связь</button>
           <button class="btn" id="btn-download" hidden
-                  title="Скачать текст проекта отдельным файлом">⬇ Скачать текст</button>
+                  title="Скачать проект в Word (DOCX), оформленный по ГОСТ Р">⬇ Скачать DOCX</button>
+           <select id="export-mode" title="Режим выгрузки" hidden>
+             <option value="draft">черновик</option>
+             <option value="final">финальный</option>
+           </select>
           <button class="btn primary" id="btn-generate" disabled>Сформировать проект</button>
         </div>
       </div>
@@ -204,8 +224,162 @@
         <span id="verdict"></span>
       </div>
 
+      <!--
+        Данные для иска (ст. 131, 132 ГПК РФ). Показываются только в режиме
+        «Исковое заявление». Это вход конструктора: цена, пошлина и
+        подсудность считаются по введённым данным, а не моделью.
+      -->
+      <details class="details-box claim-box" id="claim-box" hidden open>
+        <summary>Данные для искового заявления</summary>
+        <p class="muted small">
+          Заполните, что известно. Пустое поле — пробел в иске, программа его
+          покажет и ничего не придумает. Сначала можно нажать «Проверить и
+          посчитать»: цена иска, пошлина и подсудность будут без вызова модели.
+        </p>
+
+        <div class="claim-suggest" id="claim-suggest" hidden>
+          <div class="claim-suggest-row">
+            <p class="claim-suggest-msg" id="claim-suggest-msg"></p>
+            <button class="btn ghost" type="button" id="btn-claim-suggest">Заполнить из материалов</button>
+          </div>
+          <p class="muted small claim-suggest-missing" id="claim-suggest-missing" hidden></p>
+        </div>
+
+
+        <div class="claim-grid">
+          <label>Суд
+            <input id="claim-court-name" type="text" placeholder="Наименование суда" autocomplete="off">
+          </label>
+          <label>Уровень суда
+            <select id="claim-court-level">
+              <option value="">не указан</option>
+              <option value="district">районный суд</option>
+              <option value="magistrate">мировой судья</option>
+            </select>
+          </label>
+          <label>Адрес суда
+            <input id="claim-court-address" type="text" placeholder="Индекс, город, улица" autocomplete="off">
+          </label>
+          <label>Категория спора
+            <select id="claim-category">
+              <option value="">не указана</option>
+              <option value="loan">заём</option>
+              <option value="housing">ЖКУ</option>
+              <option value="contract_work">подряд / работы</option>
+              <option value="consumer">защита прав потребителей</option>
+              <option value="other">иное</option>
+            </select>
+          </label>
+        </div>
+
+        <p class="label">Истец</p>
+        <div class="claim-grid">
+          <label>ФИО / наименование
+            <input id="claim-plaintiff-name" type="text" autocomplete="off">
+          </label>
+          <label>Адрес
+            <input id="claim-plaintiff-address" type="text" autocomplete="off">
+          </label>
+          <label>Представитель (если есть)
+            <input id="claim-plaintiff-rep" type="text" autocomplete="off">
+          </label>
+        </div>
+
+        <p class="label">Ответчик</p>
+        <div class="claim-grid">
+          <label>ФИО / наименование
+            <input id="claim-defendant-name" type="text" autocomplete="off">
+          </label>
+          <label>Адрес
+            <input id="claim-defendant-address" type="text" autocomplete="off">
+          </label>
+        </div>
+
+        <p class="label">Основание (договор, расписка)</p>
+        <div class="claim-grid">
+          <label>Дата
+            <input id="claim-contract-date" type="text" placeholder="ДД.ММ.ГГГГ" autocomplete="off">
+          </label>
+          <label>Номер
+            <input id="claim-contract-number" type="text" autocomplete="off">
+          </label>
+          <label>Предмет
+            <input id="claim-contract-subject" type="text" placeholder="договор займа, услуги ЖКУ…" autocomplete="off">
+          </label>
+        </div>
+
+        <p class="label">Требования <span class="muted small">(суммы — цена иска)</span></p>
+        <div id="claim-demands"></div>
+        <button class="btn ghost" type="button" id="btn-claim-add-demand">＋ Добавить требование</button>
+
+        <p class="label">Обстоятельства <span class="muted small">(каждое — со ссылкой на документ)</span></p>
+        <div id="claim-facts"></div>
+        <button class="btn ghost" type="button" id="btn-claim-add-fact">＋ Добавить обстоятельство</button>
+
+        <p class="label">Приложения <span class="muted small">(по одному в строке)</span></p>
+        <textarea id="claim-attachments" rows="4"
+                  placeholder="Расписка&#10;Расчёт задолженности&#10;Квитанция об уплате госпошлины"></textarea>
+
+        <div class="claim-grid">
+          <label class="claim-check">
+            <input id="claim-pretrial-required" type="checkbox">
+            досудебный порядок обязателен
+          </label>
+          <label class="claim-check">
+            <input id="claim-pretrial-sent" type="checkbox">
+            претензия направлена
+          </label>
+          <label>Дата претензии
+            <input id="claim-pretrial-date" type="text" placeholder="ДД.ММ.ГГГГ" autocomplete="off">
+          </label>
+        </div>
+
+        <div class="alert" id="claim-alert" hidden></div>
+        <div class="claim-actions">
+          <button class="btn ghost" type="button" id="btn-claim-suggest-bottom">Заполнить из материалов</button>
+          <button class="btn" type="button" id="btn-claim-preview">Проверить и посчитать (без модели)</button>
+        </div>
+        <div id="claim-result" hidden></div>
+      </details>
+
       <div class="sections" id="sections">
         <p class="muted">Разделы проекта появятся здесь.</p>
+      </div>
+
+      <!-- Мини-агент дозаполнения: 5 вариантов + свой текст на каждое спорное место. -->
+      <details class="details-box" id="suggest-panel" hidden>
+        <summary>Предложения модели: дозаполнить спорные места</summary>
+        <p class="muted small">
+          Помощник проходит по местам, помеченным «требует проверки», и предлагает
+          пять формулировок. Ничего не применяется автоматически: выберите вариант
+          или напишите свой — сохранится новая версия проекта.
+        </p>
+        <div class="suggest-actions">
+          <button class="btn" type="button" id="btn-suggest">Начать проход по спорным местам</button>
+          <span class="muted small" id="suggest-status"></span>
+        </div>
+      </details>
+
+      <!-- Пошаговый wizard: одно проблемное место за раз, 5 вариантов + свой. -->
+      <div class="wizard-backdrop" id="suggest-wizard" hidden>
+        <div class="wizard-card">
+          <div class="wizard-head">
+            <div>
+              <strong id="wizard-title">Предложения модели</strong>
+              <div class="muted small" id="wizard-progress"></div>
+              <input type="text" id="wizard-author" class="wizard-author"
+                     placeholder="ФИО, кто вносит правку" maxlength="200"
+                     autocomplete="off">
+            </div>
+            <button class="btn ghost small" type="button" id="wizard-close">Закрыть</button>
+          </div>
+          <div class="wizard-gaps" id="wizard-gaps"></div>
+          <div class="wizard-body" id="wizard-body"></div>
+          <div class="wizard-actions">
+            <button class="btn ghost" type="button" id="wizard-skip">Пропустить</button>
+            <button class="btn primary" type="button" id="wizard-accept">Принять и далее</button>
+          </div>
+        </div>
       </div>
 
       <!-- Источники и история версий — сворачиваемые блоки -->
@@ -235,6 +409,11 @@
         </p>
       </details>
 
+      <details class="details-box" id="deviations" hidden>
+        <summary>Журнал расхождений (материалы ↔ закон)</summary>
+        <div id="deviations-body"></div>
+      </details>
+
       <!-- Правка -->
       <details class="details-box editor" id="editor" hidden>
         <summary>Внести правку вручную</summary>
@@ -243,10 +422,9 @@
           остаётся без изменений — так юридический акт можно показать
           в том виде, в каком он был принят.
         </p>
-        <select id="edit-author">
-          <option value="secretary">Правку внёс секретарь</option>
-          <option value="judge">Правку внёс судья</option>
-        </select>
+        <input type="text" id="edit-author" class="edit-author"
+               placeholder="ФИО, кто вносит правку" maxlength="200"
+               autocomplete="off">
         <input type="text" id="edit-comment" placeholder="Комментарий к правке">
         <textarea id="edit-text" rows="12"></textarea>
         <button class="btn" id="btn-save-edit">Сохранить как новую версию</button>
@@ -326,6 +504,25 @@
   </div>
 </footer>
 
-<script src="app.js?v=0.6.8"></script>
+<!-- ══ Голосовой ввод (минимальная версия) ═══════════════════════════ -->
+<button class="dictate-fab" id="dictate-fab" title="Диктовать (микрофон)" aria-label="Диктовать">🎤</button>
+<div class="dictate-panel" id="dictate-panel" hidden>
+  <h4>🎤 Диктовать секретарю</h4>
+  <div class="status" id="dictate-status">Нажмите 🎤 и говорите</div>
+  <textarea id="dictate-text" placeholder="Распознанный текст появится здесь — его можно поправить"></textarea>
+  <div class="note">Текст распознаётся на этом компьютере, без интернета. Проверьте его перед использованием.</div>
+  <div class="row">
+    <button class="btn dictate-nav" id="dictate-nav" title="Прокрутить к разделу по голосовой команде">🔎 Найти раздел</button>
+    <button class="btn dictate-insert" id="dictate-insert">Вставить в поле правки</button>
+    <button class="btn dictate-ask" id="dictate-ask" title="Модель предложит правку по открытому разделу">Спросить LLM по этому разделу</button>
+    <button class="btn ghost" id="dictate-clear">Очистить</button>
+  </div>
+  <div class="dictate-proposal" id="dictate-proposal" hidden></div>
+</div>
+
+<script src="app.js?v=0.8.4"></script>
+
+
+
 </body>
 </html>

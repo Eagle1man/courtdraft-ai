@@ -579,7 +579,6 @@ async def generate_claim_draft(
     claim_data: dict[str, Any] | None = None,
 ) -> DraftResult:
     """Иск собирается детерминированно из паспорта дела. LLM не вызывается."""
-    import json
     from app.agents.draft_agent import DraftResult, SectionDraft
     from app.drafting.claim_model import ClaimModel, ClaimModelError
     from app.drafting.claim_render import render_claim
@@ -695,7 +694,6 @@ def verify_claim_draft(
     from app.drafting.claim_model import ClaimModel
     from app.ingestion.passport import find_passport_in_pack
     from app.verification.claim_model_checks import verify_claim_model
-    from app.verification.engine import Issue, IssueType, Severity
 
     source = passport or find_passport_in_pack(pack)
     if source is None:

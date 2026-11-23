@@ -1,24 +1,24 @@
-/* Интерфейс помощника судьи — светлая премиальная тема.
+﻿/* РРЅС‚РµСЂС„РµР№СЃ РїРѕРјРѕС‰РЅРёРєР° СЃСѓРґСЊРё вЂ” СЃРІРµС‚Р»Р°СЏ РїСЂРµРјРёР°Р»СЊРЅР°СЏ С‚РµРјР°.
  *
- * Оформление подчинено одной задаче: судья и секретарь не разбираются
- * в IT, поэтому интерфейс обязан читаться без инструкции:
- *   — статусы названы словами («Проект готов», «Нужна проверки»),
- *     коды данных (DRAFT_READY, REVIEW_REQUIRED) не показываются;
- *   — шаги сверху отвечают на вопрос «где я и что дальше»;
- *   — ошибки говорят, что делать, а не какой HTTP-код вернулся;
- *   — замечания проверки видны прямо в тексте раздела, красным или
- *     янтарным, — их нельзя не заметить при беглом чтении.
+ * РћС„РѕСЂРјР»РµРЅРёРµ РїРѕРґС‡РёРЅРµРЅРѕ РѕРґРЅРѕР№ Р·Р°РґР°С‡Рµ: СЃСѓРґСЊСЏ Рё СЃРµРєСЂРµС‚Р°СЂСЊ РЅРµ СЂР°Р·Р±РёСЂР°СЋС‚СЃСЏ
+ * РІ IT, РїРѕСЌС‚РѕРјСѓ РёРЅС‚РµСЂС„РµР№СЃ РѕР±СЏР·Р°РЅ С‡РёС‚Р°С‚СЊСЃСЏ Р±РµР· РёРЅСЃС‚СЂСѓРєС†РёРё:
+ *   вЂ” СЃС‚Р°С‚СѓСЃС‹ РЅР°Р·РІР°РЅС‹ СЃР»РѕРІР°РјРё (В«РџСЂРѕРµРєС‚ РіРѕС‚РѕРІВ», В«РќСѓР¶РЅР° РїСЂРѕРІРµСЂРєРёВ»),
+ *     РєРѕРґС‹ РґР°РЅРЅС‹С… (DRAFT_READY, REVIEW_REQUIRED) РЅРµ РїРѕРєР°Р·С‹РІР°СЋС‚СЃСЏ;
+ *   вЂ” С€Р°РіРё СЃРІРµСЂС…Сѓ РѕС‚РІРµС‡Р°СЋС‚ РЅР° РІРѕРїСЂРѕСЃ В«РіРґРµ СЏ Рё С‡С‚Рѕ РґР°Р»СЊС€РµВ»;
+ *   вЂ” РѕС€РёР±РєРё РіРѕРІРѕСЂСЏС‚, С‡С‚Рѕ РґРµР»Р°С‚СЊ, Р° РЅРµ РєР°РєРѕР№ HTTP-РєРѕРґ РІРµСЂРЅСѓР»СЃСЏ;
+ *   вЂ” Р·Р°РјРµС‡Р°РЅРёСЏ РїСЂРѕРІРµСЂРєРё РІРёРґРЅС‹ РїСЂСЏРјРѕ РІ С‚РµРєСЃС‚Рµ СЂР°Р·РґРµР»Р°, РєСЂР°СЃРЅС‹Рј РёР»Рё
+ *     СЏРЅС‚Р°СЂРЅС‹Рј, вЂ” РёС… РЅРµР»СЊР·СЏ РЅРµ Р·Р°РјРµС‚РёС‚СЊ РїСЂРё Р±РµРіР»РѕРј С‡С‚РµРЅРёРё.
  *
- * Дисциплина цвета: бирюза — бренд и активное действие; зелёный —
- * готово/чисто; янтарь — требует проверки; красный — риск; бронза —
- * источники; серый — нейтральное.
+ * Р”РёСЃС†РёРїР»РёРЅР° С†РІРµС‚Р°: Р±РёСЂСЋР·Р° вЂ” Р±СЂРµРЅРґ Рё Р°РєС‚РёРІРЅРѕРµ РґРµР№СЃС‚РІРёРµ; Р·РµР»С‘РЅС‹Р№ вЂ”
+ * РіРѕС‚РѕРІРѕ/С‡РёСЃС‚Рѕ; СЏРЅС‚Р°СЂСЊ вЂ” С‚СЂРµР±СѓРµС‚ РїСЂРѕРІРµСЂРєРё; РєСЂР°СЃРЅС‹Р№ вЂ” СЂРёСЃРє; Р±СЂРѕРЅР·Р° вЂ”
+ * РёСЃС‚РѕС‡РЅРёРєРё; СЃРµСЂС‹Р№ вЂ” РЅРµР№С‚СЂР°Р»СЊРЅРѕРµ.
  *
- * Без сборки: обычный CSS и ES2020, никакого npm. Для интерфейса на
- * одну страницу сборщик — лишняя зависимость и лишний день настройки.
+ * Р‘РµР· СЃР±РѕСЂРєРё: РѕР±С‹С‡РЅС‹Р№ CSS Рё ES2020, РЅРёРєР°РєРѕРіРѕ npm. Р”Р»СЏ РёРЅС‚РµСЂС„РµР№СЃР° РЅР°
+ * РѕРґРЅСѓ СЃС‚СЂР°РЅРёС†Сѓ СЃР±РѕСЂС‰РёРє вЂ” Р»РёС€РЅСЏСЏ Р·Р°РІРёСЃРёРјРѕСЃС‚СЊ Рё Р»РёС€РЅРёР№ РґРµРЅСЊ РЅР°СЃС‚СЂРѕР№РєРё.
  */
 
 :root {
-  /* Холст и поверхности */
+  /* РҐРѕР»СЃС‚ Рё РїРѕРІРµСЂС…РЅРѕСЃС‚Рё */
   --bg: #f4f6f5;
   --card: #fff;
   --sunk: #f8faf9;
@@ -26,13 +26,13 @@
   --line2: #dde3e0;
   --hover: #f7f9f8;
 
-  /* Чернильный текст */
+  /* Р§РµСЂРЅРёР»СЊРЅС‹Р№ С‚РµРєСЃС‚ */
   --ink: #0c1927;
   --ink2: #414e5a;
   --muted: #68747f;
   --faint: #98a3ad;
 
-  /* Бренд */
+  /* Р‘СЂРµРЅРґ */
   --teal: #007b7f;
   --teal-h: #006367;
   --teal-soft: #e4f1f0;
@@ -42,7 +42,7 @@
   --bronze-bg: #f6f1e6;
   --bronze-line: #e6d9c0;
 
-  /* Семантические */
+  /* РЎРµРјР°РЅС‚РёС‡РµСЃРєРёРµ */
   --green: #1a7f45;
   --green-bg: #e7f3ea;
   --green-line: #c4e3ce;
@@ -54,7 +54,7 @@
   --red-line: #f0c6bf;
   --slate-bg: #eef1f0;
 
-  /* Тени и радиусы */
+  /* РўРµРЅРё Рё СЂР°РґРёСѓСЃС‹ */
   --sh: 0 1px 2px rgba(12, 25, 39, 0.05);
   --sh2: 0 6px 18px -6px rgba(12, 25, 39, 0.12), 0 2px 4px rgba(12, 25, 39, 0.04);
   --r: 12px;
@@ -65,12 +65,12 @@
 * { box-sizing: border-box; }
 
 /*
- * Атрибут hidden должен побеждать любые display из наших классов.
- * Без этой строки у .modal (display:flex) и .metrics (display:grid)
- * атрибут hidden игнорируется: пустое окно «Документ» висит поверх
- * страницы и не закрывается — кнопка ставит hidden, а CSS его
- * перебивает. Авторские правила всегда сильнее пользовательских,
- * поэтому без !important здесь не обойтись.
+ * РђС‚СЂРёР±СѓС‚ hidden РґРѕР»Р¶РµРЅ РїРѕР±РµР¶РґР°С‚СЊ Р»СЋР±С‹Рµ display РёР· РЅР°С€РёС… РєР»Р°СЃСЃРѕРІ.
+ * Р‘РµР· СЌС‚РѕР№ СЃС‚СЂРѕРєРё Сѓ .modal (display:flex) Рё .metrics (display:grid)
+ * Р°С‚СЂРёР±СѓС‚ hidden РёРіРЅРѕСЂРёСЂСѓРµС‚СЃСЏ: РїСѓСЃС‚РѕРµ РѕРєРЅРѕ В«Р”РѕРєСѓРјРµРЅС‚В» РІРёСЃРёС‚ РїРѕРІРµСЂС…
+ * СЃС‚СЂР°РЅРёС†С‹ Рё РЅРµ Р·Р°РєСЂС‹РІР°РµС‚СЃСЏ вЂ” РєРЅРѕРїРєР° СЃС‚Р°РІРёС‚ hidden, Р° CSS РµРіРѕ
+ * РїРµСЂРµР±РёРІР°РµС‚. РђРІС‚РѕСЂСЃРєРёРµ РїСЂР°РІРёР»Р° РІСЃРµРіРґР° СЃРёР»СЊРЅРµРµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёС…,
+ * РїРѕСЌС‚РѕРјСѓ Р±РµР· !important Р·РґРµСЃСЊ РЅРµ РѕР±РѕР№С‚РёСЃСЊ.
  */
 [hidden] { display: none !important; }
 
@@ -87,7 +87,7 @@ body {
 .muted { color: var(--muted); font-size: 13px; }
 .small { font-size: 12px; }
 
-/* ── Шапка ─────────────────────────────────────────────────────── */
+/* в”Ђв”Ђ РЁР°РїРєР° в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .top {
   background: linear-gradient(150deg, #16304c 0%, var(--navy) 55%, #0c1927 100%);
@@ -142,7 +142,7 @@ body {
   box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.22);
 }
 
-/* Нет связи: красная точка и словами, без кодов. */
+/* РќРµС‚ СЃРІСЏР·Рё: РєСЂР°СЃРЅР°СЏ С‚РѕС‡РєР° Рё СЃР»РѕРІР°РјРё, Р±РµР· РєРѕРґРѕРІ. */
 .dot.off {
   background: #f87171;
   box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.22);
@@ -150,7 +150,7 @@ body {
 
 .ver { font-size: 12px; color: rgba(255, 255, 255, 0.5); }
 
-/* Кнопка «?» — помощь по любому непонятному месту. */
+/* РљРЅРѕРїРєР° В«?В» вЂ” РїРѕРјРѕС‰СЊ РїРѕ Р»СЋР±РѕРјСѓ РЅРµРїРѕРЅСЏС‚РЅРѕРјСѓ РјРµСЃС‚Сѓ. */
 .q {
   width: 30px;
   height: 30px;
@@ -165,7 +165,7 @@ body {
 
 .q:hover { background: rgba(255, 255, 255, 0.16); }
 
-/* Панель помощи: отвечает на вопросы новичка, без терминов. */
+/* РџР°РЅРµР»СЊ РїРѕРјРѕС‰Рё: РѕС‚РІРµС‡Р°РµС‚ РЅР° РІРѕРїСЂРѕСЃС‹ РЅРѕРІРёС‡РєР°, Р±РµР· С‚РµСЂРјРёРЅРѕРІ. */
 .help {
   background: #fff;
   border-bottom: 1px solid var(--line);
@@ -180,7 +180,7 @@ body {
 .help li { margin: 4px 0; font-size: 14px; color: var(--ink2); }
 .help .close { margin-top: 8px; }
 
-/* ── Полосы-напоминания ────────────────────────────────────────── */
+/* в”Ђв”Ђ РџРѕР»РѕСЃС‹-РЅР°РїРѕРјРёРЅР°РЅРёСЏ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .notice {
   background: var(--amber-bg);
@@ -193,15 +193,15 @@ body {
 .notice .wrap { display: flex; align-items: center; gap: 9px; }
 .notice strong { font-weight: 650; }
 
-/* Баннер демонстрационного режима — другая тема, чтобы его не
- * спутали с постоянным напоминанием «это проект, а не решение». */
+/* Р‘Р°РЅРЅРµСЂ РґРµРјРѕРЅСЃС‚СЂР°С†РёРѕРЅРЅРѕРіРѕ СЂРµР¶РёРјР° вЂ” РґСЂСѓРіР°СЏ С‚РµРјР°, С‡С‚РѕР±С‹ РµРіРѕ РЅРµ
+ * СЃРїСѓС‚Р°Р»Рё СЃ РїРѕСЃС‚РѕСЏРЅРЅС‹Рј РЅР°РїРѕРјРёРЅР°РЅРёРµРј В«СЌС‚Рѕ РїСЂРѕРµРєС‚, Р° РЅРµ СЂРµС€РµРЅРёРµВ». */
 .notice.demo-banner {
   background: var(--teal-soft);
   border-bottom: 1px solid var(--teal-line);
   color: var(--teal-h);
 }
 
-/* ── Шаги ──────────────────────────────────────────────────────── */
+/* в”Ђв”Ђ РЁР°РіРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .steps {
   display: flex;
@@ -243,7 +243,7 @@ body {
 .step.now .n { background: var(--teal); color: #fff; border-color: var(--teal); }
 .arrow { color: var(--faint); font-size: 13px; }
 
-/* ── Сетка ─────────────────────────────────────────────────────── */
+/* в”Ђв”Ђ РЎРµС‚РєР° в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .layout {
   display: grid;
@@ -275,7 +275,7 @@ body {
 
 h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 
-/* ── Кнопки ────────────────────────────────────────────────────── */
+/* в”Ђв”Ђ РљРЅРѕРїРєРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .btn {
   font: inherit;
@@ -309,7 +309,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
 .btn.full { width: 100%; }
 
-/* ── Чипы статусов ─────────────────────────────────────────────── */
+/* в”Ђв”Ђ Р§РёРїС‹ СЃС‚Р°С‚СѓСЃРѕРІ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .chip {
   display: inline-flex;
@@ -329,7 +329,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .chip.bronze { background: var(--bronze-bg); color: var(--bronze); border-color: var(--bronze-line); }
 .chip.grey { background: var(--slate-bg); color: var(--ink2); border-color: var(--line2); }
 
-/* ── Дела ──────────────────────────────────────────────────────── */
+/* в”Ђв”Ђ Р”РµР»Р° в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .cases { display: flex; flex-direction: column; gap: 9px; margin-bottom: 6px; }
 
@@ -343,8 +343,8 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   cursor: pointer;
 }
 
-/* Удаление — редкое и необратимое действие, поэтому кнопка маленькая,
- * серая и появляется только при наведении: случайно не нажать. */
+/* РЈРґР°Р»РµРЅРёРµ вЂ” СЂРµРґРєРѕРµ Рё РЅРµРѕР±СЂР°С‚РёРјРѕРµ РґРµР№СЃС‚РІРёРµ, РїРѕСЌС‚РѕРјСѓ РєРЅРѕРїРєР° РјР°Р»РµРЅСЊРєР°СЏ,
+ * СЃРµСЂР°СЏ Рё РїРѕСЏРІР»СЏРµС‚СЃСЏ С‚РѕР»СЊРєРѕ РїСЂРё РЅР°РІРµРґРµРЅРёРё: СЃР»СѓС‡Р°Р№РЅРѕ РЅРµ РЅР°Р¶Р°С‚СЊ. */
 .case-del {
   position: absolute;
   top: 6px;
@@ -378,7 +378,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .case .court { font-size: 13px; color: var(--muted); margin: 2px 0 8px; word-break: break-word; }
 .case .row { display: flex; gap: 6px; flex-wrap: wrap; }
 
-/* ── Зона загрузки файлов ──────────────────────────────────────── */
+/* в”Ђв”Ђ Р—РѕРЅР° Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .drop {
   border: 2px dashed var(--teal-line);
@@ -396,7 +396,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .drop .t { font-weight: 650; font-size: 14px; margin-top: 4px; }
 .drop .h { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
-/* ── Материалы дела ────────────────────────────────────────────── */
+/* в”Ђв”Ђ РњР°С‚РµСЂРёР°Р»С‹ РґРµР»Р° в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .docs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
 
@@ -449,23 +449,23 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   color: var(--ink2);
 }
 
-/* Текст получен распознаванием скана: ошибки OCR возможны, и это видно
- * до того, как цитата из документа попадёт в проект. */
+/* РўРµРєСЃС‚ РїРѕР»СѓС‡РµРЅ СЂР°СЃРїРѕР·РЅР°РІР°РЅРёРµРј СЃРєР°РЅР°: РѕС€РёР±РєРё OCR РІРѕР·РјРѕР¶РЅС‹, Рё СЌС‚Рѕ РІРёРґРЅРѕ
+ * РґРѕ С‚РѕРіРѕ, РєР°Рє С†РёС‚Р°С‚Р° РёР· РґРѕРєСѓРјРµРЅС‚Р° РїРѕРїР°РґС‘С‚ РІ РїСЂРѕРµРєС‚. */
 .kind.ocr {
   background: var(--bronze-bg);
   border-color: var(--bronze-line);
   color: var(--bronze);
 }
 
-/* В тексте найдены фразы, похожие на инструкции модели: документ остаётся
- * в деле целиком, но человек должен увидеть это до формирования проекта. */
+/* Р’ С‚РµРєСЃС‚Рµ РЅР°Р№РґРµРЅС‹ С„СЂР°Р·С‹, РїРѕС…РѕР¶РёРµ РЅР° РёРЅСЃС‚СЂСѓРєС†РёРё РјРѕРґРµР»Рё: РґРѕРєСѓРјРµРЅС‚ РѕСЃС‚Р°С‘С‚СЃСЏ
+ * РІ РґРµР»Рµ С†РµР»РёРєРѕРј, РЅРѕ С‡РµР»РѕРІРµРє РґРѕР»Р¶РµРЅ СѓРІРёРґРµС‚СЊ СЌС‚Рѕ РґРѕ С„РѕСЂРјРёСЂРѕРІР°РЅРёСЏ РїСЂРѕРµРєС‚Р°. */
 .kind.warn {
   background: var(--red-bg);
   border-color: var(--red-line);
   color: #8d1c13;
 }
 
-/* Метка «в файле скрыты личные данные» — показать, не читая файл. */
+/* РњРµС‚РєР° В«РІ С„Р°Р№Р»Рµ СЃРєСЂС‹С‚С‹ Р»РёС‡РЅС‹Рµ РґР°РЅРЅС‹РµВ» вЂ” РїРѕРєР°Р·Р°С‚СЊ, РЅРµ С‡РёС‚Р°СЏ С„Р°Р№Р». */
 .warnline {
   display: flex;
   gap: 6px;
@@ -479,7 +479,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   margin-top: 6px;
 }
 
-/* ── Главная панель ────────────────────────────────────────────── */
+/* в”Ђв”Ђ Р“Р»Р°РІРЅР°СЏ РїР°РЅРµР»СЊ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .panel.main { min-width: 0; }
 
@@ -504,7 +504,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 
 .tools { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
 
-/* ── Счётчики ──────────────────────────────────────────────────── */
+/* в”Ђв”Ђ РЎС‡С‘С‚С‡РёРєРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .metrics {
   display: grid;
@@ -527,7 +527,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .metric.alert .v { color: var(--red); }
 .metric.alert .k { color: #8d1c13; }
 
-/* ── Прогресс и сообщения ─────────────────────────────────────── */
+/* в”Ђв”Ђ РџСЂРѕРіСЂРµСЃСЃ Рё СЃРѕРѕР±С‰РµРЅРёСЏ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .progress { margin: 16px 20px 0; }
 
@@ -567,7 +567,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 
 .alert.ok { background: var(--green-bg); border-color: var(--green-line); color: var(--green); }
 
-/* ── Результат проверки ────────────────────────────────────────── */
+/* в”Ђв”Ђ Р РµР·СѓР»СЊС‚Р°С‚ РїСЂРѕРІРµСЂРєРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .verify {
   margin: 14px 20px 0;
@@ -585,8 +585,8 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .verify.ok { border-color: var(--green-line); background: var(--green-bg); color: var(--green); }
 .verify.bad { border-color: var(--red-line); background: var(--red-bg); color: #8d1c13; }
 
-/* Отчёт прежней версии: текст изменён, проверки не было. Пунктир —
- * признак «это не действующий отчёт», а не просто ещё одно замечание. */
+/* РћС‚С‡С‘С‚ РїСЂРµР¶РЅРµР№ РІРµСЂСЃРёРё: С‚РµРєСЃС‚ РёР·РјРµРЅС‘РЅ, РїСЂРѕРІРµСЂРєРё РЅРµ Р±С‹Р»Рѕ. РџСѓРЅРєС‚РёСЂ вЂ”
+ * РїСЂРёР·РЅР°Рє В«СЌС‚Рѕ РЅРµ РґРµР№СЃС‚РІСѓСЋС‰РёР№ РѕС‚С‡С‘С‚В», Р° РЅРµ РїСЂРѕСЃС‚Рѕ РµС‰С‘ РѕРґРЅРѕ Р·Р°РјРµС‡Р°РЅРёРµ. */
 .verify.stale {
   border-style: dashed;
   border-color: var(--bronze-line);
@@ -594,7 +594,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   color: var(--bronze);
 }
 
-/* ── Разделы проекта ───────────────────────────────────────────── */
+/* в”Ђв”Ђ Р Р°Р·РґРµР»С‹ РїСЂРѕРµРєС‚Р° в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .sections { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 11px; }
 
@@ -635,11 +635,11 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .sec .body { padding: 13px 16px; font-size: 15px; line-height: 1.75; color: #2a3743; }
 .sec .body .txt { white-space: pre-wrap; }
 
-/* Заглушка (демо-режим без модели): текст приглушён и помечен. */
+/* Р—Р°РіР»СѓС€РєР° (РґРµРјРѕ-СЂРµР¶РёРј Р±РµР· РјРѕРґРµР»Рё): С‚РµРєСЃС‚ РїСЂРёРіР»СѓС€С‘РЅ Рё РїРѕРјРµС‡РµРЅ. */
 .sec.stub .body { color: #5d6a75; font-style: italic; }
 
-/* Замечание проверки: цветной «хребет» слева читается боковым
- * зрением — красное нельзя не заметить. */
+/* Р—Р°РјРµС‡Р°РЅРёРµ РїСЂРѕРІРµСЂРєРё: С†РІРµС‚РЅРѕР№ В«С…СЂРµР±РµС‚В» СЃР»РµРІР° С‡РёС‚Р°РµС‚СЃСЏ Р±РѕРєРѕРІС‹Рј
+ * Р·СЂРµРЅРёРµРј вЂ” РєСЂР°СЃРЅРѕРµ РЅРµР»СЊР·СЏ РЅРµ Р·Р°РјРµС‚РёС‚СЊ. */
 .remark {
   border-left: 3px solid var(--red);
   background: var(--red-bg);
@@ -665,7 +665,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   white-space: pre-wrap;
 }
 
-/* Источники раздела — бронзовый «архивный» тон. */
+/* РСЃС‚РѕС‡РЅРёРєРё СЂР°Р·РґРµР»Р° вЂ” Р±СЂРѕРЅР·РѕРІС‹Р№ В«Р°СЂС…РёРІРЅС‹Р№В» С‚РѕРЅ. */
 .cites {
   margin-top: 12px;
   padding-top: 9px;
@@ -676,10 +676,10 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   word-break: break-word;
 }
 
-/* Замечания, которые проверка не привязала к разделу. */
+/* Р—Р°РјРµС‡Р°РЅРёСЏ, РєРѕС‚РѕСЂС‹Рµ РїСЂРѕРІРµСЂРєР° РЅРµ РїСЂРёРІСЏР·Р°Р»Р° Рє СЂР°Р·РґРµР»Сѓ. */
 .unsectioned { display: flex; flex-direction: column; gap: 8px; }
 
-/* Не хватает данных в материалах — блок вне текста акта. */
+/* РќРµ С…РІР°С‚Р°РµС‚ РґР°РЅРЅС‹С… РІ РјР°С‚РµСЂРёР°Р»Р°С… вЂ” Р±Р»РѕРє РІРЅРµ С‚РµРєСЃС‚Р° Р°РєС‚Р°. */
 .gaps {
   margin-bottom: 12px;
   padding: 9px 11px;
@@ -693,9 +693,9 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .gaps ul { margin: 0; padding-left: 18px; }
 .gaps li { margin: 2px 0; }
 
-/* ── Утверждения раздела с источниками ─────────────────────────────
- * Блок стоит под текстом раздела: судья читает утверждение и цитату
- * рядом с абзацем, а не ищет их на другом экране. */
+/* в”Ђв”Ђ РЈС‚РІРµСЂР¶РґРµРЅРёСЏ СЂР°Р·РґРµР»Р° СЃ РёСЃС‚РѕС‡РЅРёРєР°РјРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+ * Р‘Р»РѕРє СЃС‚РѕРёС‚ РїРѕРґ С‚РµРєСЃС‚РѕРј СЂР°Р·РґРµР»Р°: СЃСѓРґСЊСЏ С‡РёС‚Р°РµС‚ СѓС‚РІРµСЂР¶РґРµРЅРёРµ Рё С†РёС‚Р°С‚Сѓ
+ * СЂСЏРґРѕРј СЃ Р°Р±Р·Р°С†РµРј, Р° РЅРµ РёС‰РµС‚ РёС… РЅР° РґСЂСѓРіРѕРј СЌРєСЂР°РЅРµ. */
 .claims {
   margin-top: 12px;
   padding: 10px 12px;
@@ -759,8 +759,8 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
 .cl-src.none, .cl-reason { color: #8d1c13; }
 .cl-reason { flex-basis: 100%; font-size: 12.5px; }
 
-/* Отказ запроса утверждений — заметно, но не красным баннером:
- * проект при этом показан и пригоден к чтению. */
+/* РћС‚РєР°Р· Р·Р°РїСЂРѕСЃР° СѓС‚РІРµСЂР¶РґРµРЅРёР№ вЂ” Р·Р°РјРµС‚РЅРѕ, РЅРѕ РЅРµ РєСЂР°СЃРЅС‹Рј Р±Р°РЅРЅРµСЂРѕРј:
+ * РїСЂРѕРµРєС‚ РїСЂРё СЌС‚РѕРј РїРѕРєР°Р·Р°РЅ Рё РїСЂРёРіРѕРґРµРЅ Рє С‡С‚РµРЅРёСЋ. */
 .claims-error {
   margin: 0 0 12px;
   padding: 9px 11px;
@@ -771,7 +771,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   color: #8d1c13;
 }
 
-/* ── Источники, версии, правка — сворачиваемые блоки ───────────── */
+/* в”Ђв”Ђ РСЃС‚РѕС‡РЅРёРєРё, РІРµСЂСЃРёРё, РїСЂР°РІРєР° вЂ” СЃРІРѕСЂР°С‡РёРІР°РµРјС‹Рµ Р±Р»РѕРєРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .details-box {
   margin: 4px 20px 18px;
@@ -835,7 +835,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   min-height: 200px;
 }
 
-/* ── Просмотр документа ────────────────────────────────────────── */
+/* в”Ђв”Ђ РџСЂРѕСЃРјРѕС‚СЂ РґРѕРєСѓРјРµРЅС‚Р° в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .modal {
   position: fixed;
@@ -881,7 +881,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   word-break: break-word;
 }
 
-/* Скрытое значение (личные данные): «заштрихованная» метка. */
+/* РЎРєСЂС‹С‚РѕРµ Р·РЅР°С‡РµРЅРёРµ (Р»РёС‡РЅС‹Рµ РґР°РЅРЅС‹Рµ): В«Р·Р°С€С‚СЂРёС…РѕРІР°РЅРЅР°СЏВ» РјРµС‚РєР°. */
 .hidden-val {
   background: repeating-linear-gradient(45deg, #faf0db, #faf0db 6px, #f5e6c6 6px, #f5e6c6 12px);
   border-bottom: 2px dotted var(--amber);
@@ -891,7 +891,7 @@ h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
   color: #6b4b08;
 }
 
-/* ── Подвал ────────────────────────────────────────────────────── */
+/* в”Ђв”Ђ РџРѕРґРІР°Р» в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 footer {
   border-top: 1px solid var(--line);
@@ -903,14 +903,14 @@ footer {
 
 footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
-/* ── Полоса прокрутки ──────────────────────────────────────────── */
+/* в”Ђв”Ђ РџРѕР»РѕСЃР° РїСЂРѕРєСЂСѓС‚РєРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 5px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--faint); }
 
-/* ── Форма создания дела ──────────────────────────────────────── */
+/* в”Ђв”Ђ Р¤РѕСЂРјР° СЃРѕР·РґР°РЅРёСЏ РґРµР»Р° в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .case-form {
   margin: 10px 0 4px;
@@ -940,7 +940,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
 
 .case-form-btns { display: flex; flex-direction: column; gap: 7px; }
 
-/* Второстепенная кнопка: не спорит с главным действием. */
+/* Р’С‚РѕСЂРѕСЃС‚РµРїРµРЅРЅР°СЏ РєРЅРѕРїРєР°: РЅРµ СЃРїРѕСЂРёС‚ СЃ РіР»Р°РІРЅС‹Рј РґРµР№СЃС‚РІРёРµРј. */
 .btn.ghost {
   background: transparent;
   border-color: transparent;
@@ -953,7 +953,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
 
 .btn.ghost:hover { color: var(--teal-h); background: var(--hover); }
 
-/* ── Реестр фактов ──────────────────────────────────────────────── */
+/* в”Ђв”Ђ Р РµРµСЃС‚СЂ С„Р°РєС‚РѕРІ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 .facts-meta {
   font-size: 12px;
@@ -987,7 +987,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
   flex-wrap: wrap;
 }
 
-/* ── Узкие экраны ──────────────────────────────────────────────── */
+/* в”Ђв”Ђ РЈР·РєРёРµ СЌРєСЂР°РЅС‹ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
 
 @media (max-width: 960px) {
   .layout { grid-template-columns: 1fr; }
@@ -995,3 +995,352 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
   .head { flex-direction: column; }
   .tools { justify-content: flex-start; }
 }
+
+/* в•ђв•ђв•ђ РСЃРєРѕРІРѕРµ Р·Р°СЏРІР»РµРЅРёРµ: РїРµСЂРµРєР»СЋС‡Р°С‚РµР»СЊ РІРёРґР° Рё С„РѕСЂРјР° РґР°РЅРЅС‹С… в•ђв•ђв•ђ */
+
+.kind-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kind-switch select {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+  background: #fff;
+}
+.kind-switch select:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(0, 123, 127, 0.12);
+}
+
+.claim-box .claim-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.claim-box label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.claim-box input[type="text"],
+.claim-box textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 8px 11px;
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+}
+.claim-box input[type="text"]:focus,
+.claim-box textarea:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(0, 123, 127, 0.12);
+}
+.claim-box textarea {
+  font-size: 13px;
+  min-height: 84px;
+  resize: vertical;
+}
+.claim-box .claim-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  font-size: 13.5px;
+}
+.claim-row {
+  display: grid;
+  grid-template-columns: 1.7fr 0.9fr 0.8fr 0.8fr 1.4fr auto;
+  gap: 8px;
+  align-items: end;
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+.claim-row.fact {
+  grid-template-columns: 0.8fr 2.4fr 1.2fr auto;
+}
+.claim-row .del {
+  height: 36px;
+  padding: 0 11px;
+}
+.claim-row .claim-check { align-self: center; }
+@media (max-width: 720px) {
+  .claim-row, .claim-row.fact { grid-template-columns: 1fr; }
+}
+
+.claim-facts-box {
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+.claim-calc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+.claim-calc .tag {
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  background: #fff;
+}
+.claim-calc .tag.ok { border-color: var(--green-line, #b9e2c6); background: var(--green-bg, #eefaf1); }
+.claim-calc .tag.warn { border-color: var(--amber-line, #f2dca6); background: var(--amber-bg, #fff8e6); }
+.claim-calc .tag.bad { border-color: var(--red-line, #f3c1bb); background: var(--red-bg, #fdecea); }
+.claim-skeleton {
+  white-space: pre-wrap;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+}
+
+
+/* Автозаполнение иска из материалов */
+.claim-suggest {
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #d7e3f4;
+  border-radius: 8px;
+  background: #f3f8ff;
+}
+.claim-suggest-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.claim-suggest-msg {
+  margin: 0;
+  font-size: 13px;
+  color: #1f3b63;
+}
+.claim-suggest-missing {
+  margin: 6px 0 0;
+  color: #7a4b00;
+}
+.claim-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* Мини-агент дозаполнения: 5 вариантов + свой текст */
+.suggest-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0;
+}
+.suggest-spot {
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  background: #fbfcfe;
+}
+.suggest-spot-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.suggest-original { color: #7a4b00; font-size: 12px; margin: 6px 0; }
+.suggest-variants { display: grid; gap: 6px; }
+.suggest-variant {
+  border: 1px solid #e3e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.suggest-variant-text { white-space: pre-wrap; font-size: 14px; }
+.suggest-variant-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.suggest-custom { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; flex-wrap: wrap; }
+.suggest-custom textarea { flex: 1 1 320px; resize: vertical; }
+
+/* Пошаговый wizard мини-агента */
+.wizard-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 28, 45, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+.wizard-backdrop[hidden] { display: none; }
+.wizard-card {
+  background: #fff;
+  border-radius: 12px;
+  width: min(760px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(10, 24, 44, 0.35);
+}
+.wizard-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e3e8f0;
+}
+.wizard-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.wizard-original {
+  color: #7a4b00;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.wizard-context {
+  font-size: 12px;
+  color: #5b6b7f;
+  background: #f5f7fa;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+}
+.wizard-variants { display: grid; gap: 8px; }
+.wizard-variant {
+  display: flex;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfcfe;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.wizard-variant:hover { border-color: #7aa2d6; }
+.wizard-variant.selected {
+  border-color: #2f6fce;
+  background: #eef4ff;
+  box-shadow: inset 0 0 0 1px #2f6fce;
+}
+.wizard-variant-num {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e3e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.wizard-variant.selected .wizard-variant-num { background: #2f6fce; color: #fff; }
+.wizard-variant-text { white-space: pre-wrap; font-size: 14px; }
+.wizard-custom-label {
+  display: block;
+  margin-top: 14px;
+  font-size: 13px;
+  color: #3c4a5c;
+}
+.wizard-custom-label textarea {
+  width: 100%;
+  margin-top: 6px;
+  resize: vertical;
+  font: inherit;
+}
+.wizard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid #e3e8f0;
+}
+.wizard-gaps {
+  padding: 12px 18px 0;
+  border-bottom: 1px solid #e3e8f0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.wizard-gaps-head { font-weight: 600; margin-bottom: 8px; }
+.wizard-gap { margin-bottom: 12px; }
+.wizard-gap-q { font-weight: 600; }
+.wizard-gap-reason { font-size: 12px; color: #5b6b7f; margin: 4px 0; }
+.wizard-gap-options { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ── Голосовой ввод (минимальная версия) ─────────────────────────── */
+.dictate-fab{position:fixed;right:22px;bottom:22px;width:54px;height:54px;border-radius:50%;
+  background:var(--teal);border:2px solid #fff;color:#fff;font-size:23px;cursor:pointer;
+  box-shadow:0 4px 16px -4px rgba(0,99,103,.6),0 2px 5px rgba(0,0,0,.2);
+  display:flex;align-items:center;justify-content:center;z-index:60;
+  transition:transform .12s,background .2s}
+.dictate-fab:hover{transform:scale(1.08);background:var(--teal-h)}
+.dictate-fab:active{transform:scale(.94)}
+.dictate-fab.rec{background:var(--red);animation:dictate-pulse 1.2s ease-in-out infinite}
+@keyframes dictate-pulse{0%,100%{box-shadow:0 0 0 0 rgba(180,35,24,.5),0 4px 16px -4px rgba(180,35,24,.6)}
+  50%{box-shadow:0 0 0 14px rgba(180,35,24,0),0 4px 16px -4px rgba(180,35,24,.6)}}
+.dictate-panel{position:fixed;right:22px;bottom:88px;width:360px;max-width:calc(100vw - 44px);
+  background:#fff;border:1px solid var(--line2);border-radius:12px;box-shadow:var(--sh2);
+  padding:14px;z-index:2001}
+.dictate-panel[hidden]{display:none}
+.dictate-panel h4{margin:0 0 6px;font-size:14px}
+.dictate-panel .status{font-size:12px;color:var(--muted);margin-bottom:8px}
+.dictate-panel .status.rec{color:var(--red);font-weight:600}
+.dictate-panel textarea{width:100%;min-height:80px;border:1px solid var(--teal-line);border-radius:8px;
+  padding:9px;font:13px/1.5 "Segoe UI",Arial,sans-serif;resize:vertical;background:var(--teal-soft);color:var(--ink)}
+.dictate-panel .note{font-size:11px;color:var(--muted);margin-top:6px}
+.dictate-panel .row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.dictate-insert{background:var(--teal);border-color:var(--teal-h);color:#fff}
+@media (prefers-reduced-motion: reduce){.dictate-fab,.dictate-panel *{animation:none!important;transition:none!important}}
+
+.dictate-ask{background:var(--bronze-bg);border-color:var(--bronze-line);color:var(--bronze)}
+.dictate-proposal{margin-top:12px;border:1px solid var(--bronze-line);background:var(--bronze-bg);
+  border-radius:9px;padding:11px;font-size:13px}
+.dictate-proposal[hidden]{display:none}
+.dp-head{font-weight:700;font-size:12px;color:var(--bronze);margin-bottom:7px}
+.dp-section{font-size:11px;color:var(--muted);margin-bottom:5px}
+.dp-proposed{background:#fff;border:1px solid var(--bronze-line);border-radius:7px;padding:9px;line-height:1.5}
+.dp-expl{font-size:11px;color:var(--muted);margin-top:6px}
+.dp-warn{color:var(--red);font-size:12px;margin-top:6px}
+
+/* Подсветка раздела, к которому перешли (голосом или кликом) */
+.sec.active{border-color:var(--teal);box-shadow:0 0 0 2px var(--teal-line),var(--sh2)}
+.sec.active .sh{background:var(--teal-soft)}
+.dictate-nav{background:var(--navy);border-color:var(--navy);color:#fff}
+
+/* ══ Статусы из бэкенда: critical-banner, паспорт, журнал расхождений ══ */
+
+/* Критический баннер блокировки выгрузки */
+.notice.critical-banner{background:var(--red-bg);border-bottom:1px solid var(--red-line);color:#8d1c13}
+/* Паспорт дела */
+.slot{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.slot-k{color:var(--muted)}
+.slot-v{font-weight:600;text-align:right;word-break:break-word}
+.slot.missing .slot-v{color:var(--red);font-weight:600}
+.pp-status{font-size:12px;color:var(--muted);margin-bottom:6px}
+.pp-actions{display:flex;align-items:center;gap:10px;margin-top:10px}
+/* Журнал расхождений */
+.dev{padding:7px 0;border-bottom:1px solid var(--line)}
+.dev-item{font-weight:600;font-size:13px}
+.dev-res{margin-top:2px}
+/* Селектор режима выгрузки */
+#export-mode{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line2);border-radius:9px;background:#fff}
+#m-sources.warn{color:var(--amber)}
+

@@ -256,7 +256,45 @@ def _draft_out(
             legal_audit=legal_audit,
             claim_proofs=claim_proofs if isinstance(claim_proofs, list) else [],
             claim_proof_summary=claim_proof_summary if isinstance(claim_proof_summary, dict) else {},
+            p0_count=sum(
+                1 for item in raw_issues
+                if str(item.get("severity", "")) == "CRITICAL"
+            ),
+            blocking=[
+                {"code": str(item.get("type", "")), "message": str(item.get("reason", "")), "slot": str(item.get("section", ""))}
+                for item in raw_issues
+                if str(item.get("severity", "")) == "CRITICAL"
+            ],
         )
+
+    # Вычисляем status для каждого раздела на основе verification issues
+    if verification_out is not None:
+        raw_items = [
+            item.to_dict() if hasattr(item, "to_dict") else item
+            for item in verification.issues
+        ]
+        all_raw = [
+            item for item in raw_items
+            if isinstance(item, dict)
+            and item.get("__meta__") not in ("legal_audit", "claim_proofs", "claim_proof_summary")
+            and item.get("type") not in ("__legal_audit__", "__claim_proofs__", "__claim_proof_summary__")
+        ]
+        for sec in sections:
+            sec_issues = [
+                item for item in all_raw
+                if str(item.get("section", "")) == sec.key
+            ]
+            has_critical = any(
+                str(item.get("severity", "")) == "CRITICAL"
+                for item in sec_issues
+            )
+            has_issues = bool(sec_issues)
+            if has_critical:
+                sec.status = "blocked"
+            elif sec.needs_review or sec.is_mock or sec.gaps or has_issues:
+                sec.status = "review"
+            else:
+                sec.status = "ready"
 
     return DraftOut(
         id=draft.id,
@@ -603,11 +641,16 @@ async def get_draft(case_id: uuid.UUID, session: SessionDep) -> DraftOut | None:
 
 
 @router.get("/cases/{case_id}/draft/versions", response_model=DraftListOut)
-async def list_versions(case_id: uuid.UUID, session: SessionDep) -> DraftListOut:
-    """GET /api/cases/{id}/draft/versions — все версии проекта (п.31).
+async def list_versions(
+    case_id: uuid.UUID,
+    session: SessionDep,
+    kind: str | None = Query(default=None, description="Вид документа: claim | judgment"),
+) -> DraftListOut:
+    """GET /api/cases/{id}/draft/versions — версии по виду документа (п.31).
 
-    Каждая редакция сохраняется целиком со своим автором: судья должен
-    видеть документ в том виде, в каком он был принят.
+    Версии иска и решения раздельны: вид задаётся ключом поиска, а не
+    полем-заглушкой. Каждая редакция сохраняется целиком со своим автором:
+    судья должен видеть документ в том виде, в каком он был принят.
     """
     service = DraftService(session)
     case = await service.cases.get(case_id)
@@ -615,7 +658,7 @@ async def list_versions(case_id: uuid.UUID, session: SessionDep) -> DraftListOut
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Дело не найдено"
         )
-    draft = await service.get_draft_for_case(case_id)
+    draft = await service.get_draft_for_case(case_id, kind=kind)
     if draft is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -816,6 +859,7 @@ async def suggest_edits_stream(
 async def export_draft_docx(
     draft_id: uuid.UUID,
     session: SessionDep,
+    mode: str = "draft",
 ) -> Response:
     """Скачать проект в DOCX, оформленном по ГОСТ Р (готов к подаче)."""
     from app.services.export_docx import export_docx
@@ -855,7 +899,7 @@ async def export_draft_docx(
     p0 += len(broken_numbers(text))
     stale = bool(verification and verification.draft_version != latest.version)
     try:
-        assert_export_allowed(p0_count=p0, is_stale=stale, mode="final")
+        assert_export_allowed(p0_count=p0, is_stale=stale, mode=mode)
     except ExportBlockedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
