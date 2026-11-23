@@ -218,10 +218,12 @@ def a12() -> tuple[bool, str]:
 
 @check("A13", "нет разрывов чисел и служебных заголовков")
 def a13() -> tuple[bool, str]:
+    from app.textnorm import broken_numbers
+
     text = _render()
-    broken = re.search(r"\d \d{3},\d{2}", text)
+    bad = broken_numbers(text)
     heads = [h for h in ("ШАПКА И АДРЕСАТ", "СТОРОНЫ И ТРЕТЬИ ЛИЦА", "ЦЕНА ИСКА") if h in text]
-    return not broken and not heads, f"broken={bool(broken)} heads={heads}"
+    return not bad and not heads, f"broken={bad} heads={heads}"
 
 
 @check("A14", "объём 3200–4500 знаков")

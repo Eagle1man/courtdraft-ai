@@ -116,6 +116,8 @@ def guess_document_type(filename: str, text: str) -> str:
     head = text[:4000].lower()
 
     # 1. Заголовок документа.
+    if "претензи" in header:
+        return "PRETRIAL"
     if "возражени" in header:
         return DocumentType.RESPONSE.value
     if "исковое заявление" in header:
@@ -326,6 +328,17 @@ def _apply_ocr(
         offsets.append(total)
         total += len(page.text)
 
+    confidences = [p.confidence for p in ocr.pages if getattr(p, "confidence", None) is not None]
+    avg_conf = round(sum(confidences) / len(confidences), 2) if confidences else None
+    per_page = [
+        {
+            "page": p.number,
+            "confidence": getattr(p, "confidence", None),
+            "metadata": dict(getattr(p, "metadata", {}) or {}),
+        }
+        for p in ocr.pages
+    ]
+
     return ExtractedDocument(
         text=text,
         pages=pages,
@@ -339,6 +352,8 @@ def _apply_ocr(
                 "languages": config.ocr_languages,
                 "dpi": config.ocr_dpi,
                 "warnings": ocr.warnings,
+                "average_confidence": avg_conf,
+                "pages": per_page,
             },
         },
         page_offsets=offsets,

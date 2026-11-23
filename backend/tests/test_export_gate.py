@@ -5,16 +5,16 @@ import pytest
 
 
 def test_blocked_on_p0() -> None:
-    from app.services.export_gate import ExportBlocked, assert_export_allowed
+    from app.services.export_gate import ExportBlockedError, assert_export_allowed
 
-    with pytest.raises(ExportBlocked):
+    with pytest.raises(ExportBlockedError):
         assert_export_allowed(p0_count=1, is_stale=False, mode="final")
 
 
 def test_blocked_on_stale() -> None:
-    from app.services.export_gate import ExportBlocked, assert_export_allowed
+    from app.services.export_gate import ExportBlockedError, assert_export_allowed
 
-    with pytest.raises(ExportBlocked):
+    with pytest.raises(ExportBlockedError):
         assert_export_allowed(p0_count=0, is_stale=True, mode="final")
 
 
