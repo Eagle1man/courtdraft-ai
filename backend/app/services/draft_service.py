@@ -41,7 +41,7 @@ from app.models.entities import (
     EvidenceItem,
     Verification,
 )
-from app.rag.laws import law_context_for_case
+from app.rag.laws import law_context_for_case, materials_law_context
 from app.verification.engine import VerificationReport, verify_draft
 from app.verification.recheck import recheck_version
 
@@ -92,25 +92,35 @@ class DraftService:
             case.category,
             documents,
             case_type=case.case_type,
+            filing_date=getattr(case, "filing_date", None),
             settings=cfg,
         )
 
     async def apply_law_context(self, pack: EvidencePack) -> None:
         """Подмешать нормы к пакету — только вне транзакции базы.
 
-        Запрос — требования и обстоятельства: искать по всему делу дороже
-        и менее точно. Любой сбой поиска не должен ломать генерацию:
-        `law_context_for_case` в этом случае возвращает пусто.
+        При включённом RAG берём нормы из базы знаний (по запросу дела).
+        Всегда добавляем детерминированный контекст норм, реально
+        упомянутых в материалах (без rag_laws_enabled вслепую): он
+        подсказывает модели профиль дела и не зависит от эмбеддингов.
         """
         cfg = get_settings()
-        if not cfg.rag_laws_enabled:
-            return
-        query = " ".join(
-            item.text
-            for item in pack.items
-            if item.category in {"claims", "objections", "evidence", "established_facts"}
-        )[:1500]
-        pack.law_context = await law_context_for_case(query, cfg)
+        rag_blocks: list[str] = []
+        if cfg.rag_laws_enabled:
+            query = " ".join(
+                item.text
+                for item in pack.items
+                if item.category in {"claims", "objections", "evidence", "established_facts"}
+            )[:1500]
+            rag_blocks = await law_context_for_case(query, cfg)
+        material_blocks = materials_law_context(pack, max_chars=cfg.rag_laws_context_chars)
+        # RAG (если есть) даёт тексты норм, материалы — перечень упомянутых;
+        # сохраняем оба, избегая точных дублей блоков.
+        blocks: list[str] = []
+        for block in [*rag_blocks, *material_blocks]:
+            if block and block not in blocks:
+                blocks.append(block)
+        pack.law_context = blocks
 
     async def save_pack(self, case_id: uuid.UUID, pack: EvidencePack) -> int:
         """Сохранить пакет доказательств в базу."""
@@ -135,12 +145,27 @@ class DraftService:
         ]
 
         saved = await self.evidence.replace_for_case(case_id, rows)
+
+        # Stage 1.2 dual-write: traceable evidence spans/amount candidates (additive, behind flags).
+        try:
+            from app.services.case_evidence_trace import dual_write_evidence_pack
+
+            docs = await self.documents.list_for_case(case_id)
+            by_name = {d.filename: d.id for d in docs}
+            trace = await dual_write_evidence_pack(
+                self._session, case_id, pack, document_ids_by_filename=by_name, settings=get_settings()
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Dual-write evidence trace skipped: %s", exc)
+            trace = {"enabled": 0, "error": str(exc)[:200]}
+
         await self.audit.log(
             "evidence.saved",
             case_id=case_id,
             actor="system",
             facts=saved,
             gaps=len(pack.gaps),
+            trace=trace,
         )
         return saved
 
@@ -160,16 +185,15 @@ class DraftService:
         provider: LLMProvider | None = None,
         template_name: str | None = None,
         actor: str = "system",
+        document_kind: str | None = None,
+        claim_data: dict[str, Any] | None = None,
     ) -> tuple[Draft, DraftVersion, VerificationReport, EvidencePack]:
         """Сформировать проект, сохранить его и результат проверки.
 
         Шаблон выбирается по виду судопроизводства дела (``case_type``),
-        если он не задан явно. Раньше здесь стоял ``civil_judgment``
-        по умолчанию: проект по арбитражному делу применял ГПК РФ.
-
-        Возвращает проект, созданную версию, отчёт проверки и пакет —
-        всё вместе, потому что вызывающему коду нужно показать пользователю
-        и текст, и то, на что он опирается, и что в нём не так.
+        если он не задан явно. Для искового заявления (``document_kind='claim'``
+        или шаблон ``civil_claim``) используется отдельный профиль генерации
+        и проверки; функционал судьи (решение) не меняется.
         """
         case = await self.cases.get(case_id)
         if case is None:
@@ -189,11 +213,113 @@ class DraftService:
         await self._session.commit()
         logger.info("Пакет доказательств: %d фактов", saved)
 
-        template = load_template(
-            name=template_name or template_name_for_case(case.case_type)
-        )
+        effective_document_kind = (document_kind or "").strip().lower()
+        effective_template_name = template_name
+        if not effective_document_kind:
+            if effective_template_name == "civil_claim" or claim_data is not None:
+                effective_document_kind = "claim"
+            else:
+                effective_document_kind = "judgment"
+        if effective_document_kind == "claim" and not effective_template_name:
+            effective_template_name = "civil_claim"
+        if not effective_template_name:
+            effective_template_name = template_name_for_case(case.case_type)
+
+        template = load_template(name=effective_template_name)
         cfg = get_settings()
-        if cfg.multi_agent_enabled:
+        trace_context = None
+        try:
+            from app.services.case_trace_context import load_case_trace_context
+
+            trace_context = await load_case_trace_context(self._session, case_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Trace context unavailable: %s", exc)
+        # Stage 4: attach compact traceable ledger/evidence summary for generation (no full-case prompt)
+        if isinstance(trace_context, dict):
+            try:
+                setattr(pack, "trace_context", trace_context)
+            except Exception:
+                pass
+            lines = ["[TRACE_LEDGER_SUMMARY]"]
+            prov = trace_context.get("provenance") or {}
+            lines.append(
+                f"spans={prov.get('spans_count',0)} facts={prov.get('facts_count',0)} amount_items={prov.get('amount_items_count',0)} untraced_amounts={prov.get('has_untraced_amounts')}"
+            )
+            ac = trace_context.get("amount_conflicts") or {}
+            if ac.get("has_conflicts"):
+                lines.append("AMOUNT_CONFLICTS=TRUE (требуется проверка сумм/итогов по первоисточникам)")
+            items = ((trace_context.get("amount_ledger") or {}).get("items") or [])[:20]
+            for it in items:
+                money = (it.get("money") or {}).get("value")
+                lines.append(
+                    f"- amount[{it.get('amount_type')}]={money} {it.get('currency')} status={it.get('status')} "
+                    f"trace={'yes' if it.get('has_trace') else 'no'} conflict={'yes' if it.get('conflict') else 'no'} "
+                    f"spans={len(it.get('evidence_span_ids') or [])} id={str(it.get('amount_item_id'))[:8]}"
+                )
+            # include a few evidence span refs (provenance anchors)
+            for sp in (trace_context.get("evidence_spans") or [])[:8]:
+                ref = f"doc={sp.get('document_id')} page={sp.get('page_number')} span={sp.get('span_id') or sp.get('evidence_span_id')}"
+                quote = (sp.get("quote") or "").replace("\n", " ")[:120]
+                lines.append(f"- evidence_ref {ref}: {quote}")
+            block = "\n".join(lines)
+            try:
+                pack.law_context = [b for b in (getattr(pack, "law_context", None) or []) if b] + [block]
+            except Exception:
+                pass
+        harness: dict[str, Any] | None = None
+        # Чтение trace-контекста выше снова открыло транзакцию (BEGIN
+        # IMMEDIATE берёт блокировку записи сразу, даже на чтение). Если её
+        # не закрыть, блокировка держится всё время генерации — минуты, —
+        # и остальные запросы получают «database is locked» по busy_timeout.
+        # Коммит здесь ничего не меняет в данных: пакет уже сохранён.
+        await self._session.commit()
+        if effective_document_kind == "claim":
+            from app.db.repositories import CasePassportRepository, DeviationRepository
+            from app.drafting.claim_draft import generate_claim_draft, verify_claim_draft
+            from app.ingestion.passport import CasePassport, find_passport_in_pack
+
+            passport_record = None
+            repo = CasePassportRepository(self._session)
+            record = await repo.get_for_case(case_id)
+            passport = None
+            if record is not None:
+                try:
+                    passport = CasePassport.model_validate(record.payload)
+                except Exception:  # noqa: BLE001
+                    passport = None
+            if passport is None:
+                passport = find_passport_in_pack(pack)
+                if passport is not None:
+                    issues = passport.validate_invariants()
+                    await repo.upsert(
+                        case_id,
+                        schema_id=passport.schema_id,
+                        mode=passport.mode,
+                        status=passport.status,
+                        payload=passport.as_dict(),
+                        issues=[i.model_dump() for i in issues],
+                        source="upload",
+                    )
+            passport_record = passport
+            await self._session.commit()
+
+            draft_result = await generate_claim_draft(
+                pack,
+                template,
+                provider=provider,
+                settings=cfg,
+                case=case,
+                claim_data=claim_data,
+            )
+            report = verify_claim_draft(draft_result, pack, claim_data=claim_data, passport=passport_record)
+            if passport_record is not None:
+                from app.drafting.claim_model import ClaimModel
+                from app.verification.deviations import build_deviations
+
+                model = ClaimModel.from_passport(passport_record.as_dict())
+                rows = build_deviations(model, passport_record)
+                await DeviationRepository(self._session).replace_for_case(case_id, rows)
+        elif cfg.multi_agent_enabled:
             from app.agents.pipeline import run_pipeline
 
             pipeline = await run_pipeline(
@@ -201,19 +327,38 @@ class DraftService:
                 template,
                 provider=provider,
                 settings=cfg,
+                trace_context=trace_context,
             )
             draft_result = pipeline.draft
             report = pipeline.verification
+            harness = getattr(pipeline, "harness", None)
         else:
             draft_result = await generate_draft(pack, template, provider=provider)
-            report = verify_draft(draft_result, pack)
+            report = verify_draft(draft_result, pack, trace_context=trace_context)
+            if getattr(cfg, "model_harness_enabled", False):
+                try:
+                    from app.harnesses.integration import run_harness_capabilities
+
+                    harness = await run_harness_capabilities(
+                        pack=pack,
+                        template=template,
+                        draft=draft_result,
+                        report=report,
+                        settings=cfg,
+                        trace_context=trace_context if isinstance(trace_context, dict) else None,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Harness integration (non-pipeline) failed: %s", exc)
+                    harness = {"enabled": True, "error": str(exc), "capabilities": {}, "warnings": [str(exc)]}
 
         draft, version = await self._persist(
             case_id,
             draft_result,
             report,
             template_name=str(template.get("name") or ""),
+            document_kind=effective_document_kind,
             actor=actor,
+            harness=harness if harness and harness.get("enabled") else None,
         )
 
         await self.audit.log(
@@ -228,6 +373,7 @@ class DraftService:
             verification=report.status.value,
             unsupported=report.unsupported_claims,
             latency_ms=draft_result.total_latency_ms,
+            document_kind=effective_document_kind,
         )
 
         return draft, version, report, pack
@@ -240,6 +386,7 @@ class DraftService:
         *,
         template_name: str = "civil_judgment",
         actor: str = "system",
+        document_kind: str | None = None,
     ) -> tuple[Draft, DraftVersion]:
         """Сохранить уже готовый проект и результат его проверки.
 
@@ -252,11 +399,13 @@ class DraftService:
         который уже проверен, поэтому демо и интерфейс показывают один
         и тот же текст, а не результаты двух независимых прогонов.
         """
+        kind = (document_kind or ("claim" if template_name == "civil_claim" else "judgment")).strip().lower() or "judgment"
         draft, version = await self._persist(
             case_id,
             result,
             report,
             template_name=template_name,
+            document_kind=kind,
             actor=actor,
         )
         await self.audit.log(
@@ -271,6 +420,7 @@ class DraftService:
             verification=report.status.value,
             unsupported=report.unsupported_claims,
             latency_ms=result.total_latency_ms,
+            document_kind=kind,
         )
         return draft, version
 
@@ -282,6 +432,8 @@ class DraftService:
         *,
         template_name: str,
         actor: str,
+        document_kind: str = "judgment",
+        harness: dict[str, Any] | None = None,
     ) -> tuple[Draft, DraftVersion]:
         """Сохранить проект, его версию и результат проверки.
 
@@ -289,11 +441,21 @@ class DraftService:
         уже выполнена против настоящего пакета доказательств, и повторный
         прогон против урезанных данных дал бы другой, менее строгий ответ.
         """
-        draft = await self.drafts.get_for_case(case_id)
+        draft = await self.drafts.get_for_case(case_id, kind=kind)
+        kind = (document_kind or "judgment").strip().lower() or "judgment"
         if draft is None:
             draft = await self.drafts.create(
-                case_id, template_name=template_name, status=DraftStatus.DRAFT.value
+                case_id,
+                template_name=template_name,
+                status=DraftStatus.DRAFT.value,
+                document_kind=kind,
             )
+        else:
+            # Обновляем вид/шаблон, если дело переключилось между режимами.
+            draft.template_name = template_name
+            if hasattr(draft, "document_kind"):
+                draft.document_kind = kind
+            await self._session.flush()
 
         sections = [
             {
@@ -324,11 +486,21 @@ class DraftService:
         )
 
         report_status = report.status.value
+        issues_payload = [i.to_dict() for i in report.issues]
+        # Persist structured legal audit/claim proofs compatibly inside issues payload (no schema migration).
+        if getattr(report, "legal_audit", None) is not None:
+            issues_payload.append({"__meta__": "legal_audit", "type": "__legal_audit__", "data": report.legal_audit})
+        if getattr(report, "claim_proofs", None):
+            issues_payload.append({"__meta__": "claim_proofs", "type": "__claim_proofs__", "data": report.claim_proofs})
+        if getattr(report, "claim_proof_summary", None):
+            issues_payload.append({"__meta__": "claim_proof_summary", "type": "__claim_proof_summary__", "data": report.claim_proof_summary})
+        if harness:
+            issues_payload.append({"__meta__": "harness_capabilities", "type": "__harness_capabilities__", "data": harness})
         await self.drafts.add_verification(
             draft.id,
             draft_version=version.version,
             status=report_status,
-            issues=[i.to_dict() for i in report.issues],
+            issues=issues_payload,
             claims_checked=report.claims_checked,
             unsupported_claims=report.unsupported_claims,
             sections_checked=report.sections_checked,
@@ -416,13 +588,61 @@ class DraftService:
 
         version = versions[-1]
         pack = await self.build_pack(draft.case_id)
-        report = recheck_version(version, pack)
+        trace_context = None
+        try:
+            from app.services.case_trace_context import load_case_trace_context
+
+            trace_context = await load_case_trace_context(self._session, draft.case_id)
+        except Exception:
+            trace_context = None
+        if not isinstance(trace_context, dict):
+            trace_context = {}
+        try:
+            from sqlalchemy import select
+
+            from app.models.entities import DraftGapAnswer
+
+            rows = (
+                await self._session.execute(
+                    select(DraftGapAnswer).where(DraftGapAnswer.draft_id == draft_id)
+                )
+            ).scalars().all()
+            trace_context["gap_answers"] = {row.gap_id: row.answer for row in rows}
+        except Exception:
+            trace_context["gap_answers"] = {}
+        report = recheck_version(version, pack, trace_context=trace_context)
+
+        issues_payload = [issue.to_dict() for issue in report.issues]
+        if getattr(report, "legal_audit", None) is not None:
+            issues_payload.append({"__meta__": "legal_audit", "type": "__legal_audit__", "data": report.legal_audit})
+        if getattr(report, "claim_proofs", None):
+            issues_payload.append({"__meta__": "claim_proofs", "type": "__claim_proofs__", "data": report.claim_proofs})
+        if getattr(report, "claim_proof_summary", None):
+            issues_payload.append({"__meta__": "claim_proof_summary", "type": "__claim_proof_summary__", "data": report.claim_proof_summary})
+        if getattr(get_settings(), "model_harness_enabled", False):
+            try:
+                from app.harnesses.integration import run_harness_capabilities
+
+                harness = await run_harness_capabilities(
+                    pack=pack,
+                    template=None,
+                    draft=None,
+                    report=report,
+                    settings=get_settings(),
+                    trace_context=trace_context if isinstance(trace_context, dict) else None,
+                )
+                if harness and harness.get("enabled"):
+                    issues_payload.append(
+                        {"__meta__": "harness_capabilities", "type": "__harness_capabilities__", "data": harness}
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Harness integration (reverify) failed: %s", exc)
 
         record = await self.drafts.add_verification(
             draft.id,
             draft_version=version.version,
             status=report.status.value,
-            issues=[issue.to_dict() for issue in report.issues],
+            issues=issues_payload,
             claims_checked=report.claims_checked,
             unsupported_claims=report.unsupported_claims,
             sections_checked=report.sections_checked,

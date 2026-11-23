@@ -844,8 +844,16 @@ async def export_draft_docx(
     from app.services.export_gate import ExportBlockedError, assert_export_allowed
     from app.textnorm import broken_numbers
 
-    p0 = len(broken_numbers(text))
-    stale = bool(draft.verifications and draft.verifications[-1].draft_version != latest.version)
+    verification = draft.verifications[-1] if draft.verifications else None
+    raw_issues = verification.issues if verification else []
+    issues = raw_issues if isinstance(raw_issues, list) else []
+    p0 = sum(
+        1
+        for item in issues
+        if isinstance(item, dict) and str(item.get("severity")) == "CRITICAL"
+    )
+    p0 += len(broken_numbers(text))
+    stale = bool(verification and verification.draft_version != latest.version)
     try:
         assert_export_allowed(p0_count=p0, is_stale=stale, mode="final")
     except ExportBlockedError as exc:

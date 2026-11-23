@@ -684,94 +684,38 @@ def _fallback_section_text(
 
 
 def verify_claim_draft(
-    draft: DraftResult, pack: Any, claim_data: dict[str, Any] | None = None
+    draft: DraftResult,
+    pack: Any,
+    claim_data: dict[str, Any] | None = None,
+    *,
+    passport: Any = None,
+    mode: str = "draft",
 ) -> VerificationReport:
-    issues: list[Issue] = []
-    forbidden_total = 0
-    for sec in draft.sections:
-        found = _collect_forbidden(sec.text)
-        sanitized = _SANITIZED_MARKER in (sec.text or "")
-        if sanitized:
-            forbidden_total += 1
-            issues.append(
-                Issue(
-                    type=IssueType.CONTRADICTION,
-                    severity=Severity.CRITICAL,
-                    text="Недопустимая формулировка судебного акта удалена (санитация)",
-                    reason="В тексте раздела была формулировка судебного акта — из черновика иска она удалена; проверьте, что смысл сохранился",
-                    section=sec.key,
-                )
+    """Проверка иска по модели и паспорту. Без паспорта документ блокируется."""
+    from app.drafting.claim_model import ClaimModel
+    from app.ingestion.passport import find_passport_in_pack
+    from app.verification.claim_model_checks import verify_claim_model
+    from app.verification.engine import Issue, IssueType, Severity
+
+    source = passport or find_passport_in_pack(pack)
+    if source is None:
+        report = VerificationReport(status=VerificationStatus.BLOCKED)
+        report.issues.append(
+            Issue(
+                type=IssueType.INCOMPLETE,
+                severity=Severity.CRITICAL,
+                text="",
+                reason=(
+                    "X13: в материалах нет 00-ПАСПОРТ-ДЕЛА.json — "
+                    "детерминированный иск не из чего собрать и не с чем сверить"
+                ),
+                section="claim",
             )
-        forbidden_total += len(found)
-        for label in found:
-            issues.append(
-                Issue(
-                    type=IssueType.CONTRADICTION,
-                    severity=Severity.CRITICAL,
-                    text=label,
-                    reason="В тексте раздела обнаружена недопустимая формулировка судебного акта",
-                    section=sec.key,
-                )
-            )
-        # source/confirmation markers
-        if sec.key in {"legal_basis"}:
-            law_ctx = [b for b in (getattr(pack, "law_context", None) or []) if b and not str(b).startswith("[TRACE_LEDGER_SUMMARY]")]
-            if not law_ctx:
-                issues.append(
-                    Issue(
-                        type=IssueType.LAW_NOT_FOUND,
-                        severity=Severity.HIGH,
-                        text="Нормы не подтверждены",
-                        reason="В разделе нет подтверждённых текстов норм из правовой базы; проверьте или уберите ссылки",
-                        section=sec.key,
-                    )
-                )
-            # crude citation presence without context evidence
-            if re.search(r"\bст(?:атьи|\.)?\s*\d+", sec.text or "", re.IGNORECASE) and not law_ctx:
-                issues.append(
-                    Issue(
-                        type=IssueType.UNSUPPORTED_CLAIM,
-                        severity=Severity.HIGH,
-                        text="Ссылка на норму без подтверждения",
-                        reason="Есть ссылка на статью, но подтверждённого текста нормы нет (KB-only не выполнен)",
-                        section=sec.key,
-                    )
-                )
-        # amounts without source marker in key sections
-        if sec.key in {"facts", "calculation", "request"}:
-            has_amount = bool(re.search(r"\d[\d\s\u00a0]*([.,]\d{1,2})?\s*(?:руб|₽)", sec.text or "", re.IGNORECASE))
-            has_source_or_review = bool(re.search(r"источник|требует проверки", sec.text or "", re.IGNORECASE))
-            if has_amount and not has_source_or_review:
-                issues.append(
-                    Issue(
-                        type=IssueType.MISSING_SOURCE,
-                        severity=Severity.MEDIUM,
-                        text="Сумма без источника",
-                        reason="В разделе есть сумма, но нет ни источника, ни пометки «требует проверки»",
-                        section=sec.key,
-                    )
-                )
+        )
+        report.claim_proof_summary = {"p0_count": 1, "document_kind": "claim"}
+        return report
 
-    # claim input completeness signals
-    claim_input = _claim_input_from_context(claim_data)
-    if not claim_input.demands:
-        issues.append(Issue(type=IssueType.INCOMPLETE, severity=Severity.HIGH, text="требования", reason="Не указаны требования истца", section="request"))
-    if not claim_input.facts:
-        issues.append(Issue(type=IssueType.INCOMPLETE, severity=Severity.HIGH, text="обстоятельства", reason="Не указаны обстоятельства иска", section="facts"))
-
-    status = VerificationStatus.PASS
-    if any(i.severity in {Severity.CRITICAL, Severity.HIGH} for i in issues):
-        status = VerificationStatus.REVIEW_REQUIRED
-    elif issues:
-        status = VerificationStatus.REVIEW_REQUIRED
-
-    report = VerificationReport(
-        status=status,
-        issues=issues,
-        sections_checked=len(draft.sections),
-        claims_checked=len(claim_input.demands),
-        unsupported_claims=sum(1 for i in issues if i.type in {IssueType.UNSUPPORTED_CLAIM, IssueType.MISSING_SOURCE, IssueType.LAW_NOT_FOUND}),
-    )
-    # attach claim-specific meta for transparency
-    report.claim_proof_summary = {"forbidden_phrases_found": forbidden_total, "document_kind": "claim"}
-    return report
+    model = ClaimModel.from_passport(source.as_dict())
+    text = draft.text_override or draft.text
+    result = verify_claim_model(model, text, passport=source, mode=mode)
+    return result.to_report(sections_checked=len(draft.sections) or 1)

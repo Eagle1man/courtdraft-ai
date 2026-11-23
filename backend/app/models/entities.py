@@ -407,6 +407,9 @@ class Draft(TimestampMixin, Base):
     template_name: Mapped[str] = mapped_column(
         String(100), nullable=False, default="civil_judgment"
     )
+    document_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="judgment", index=True
+    )
     current_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     case: Mapped[Case] = relationship(back_populates="drafts")
@@ -757,3 +760,34 @@ class JobRecord(TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<JobRecord {self.id} {self.state} case={self.case_id}>"
+
+
+class CasePassportRecord(TimestampMixin, Base):
+    """Паспорт дела: единый источник фактов для детерминированного иска."""
+
+    __tablename__ = "case_passports"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    schema_id: Mapped[str] = mapped_column(String(40), nullable=False, default="case-passport/3.1")
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="ETALON")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ok", index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    issues: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="upload")
+
+
+class CaseDeviation(TimestampMixin, Base):
+    """Расхождение материалов с законом: журнал, а не текст документа."""
+
+    __tablename__ = "case_deviations"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False, default="P1")

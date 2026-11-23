@@ -23,7 +23,9 @@ from app.models.entities import (
     AuditEntry,
     Case,
     CaseAnalysis,
+    CaseDeviation,
     CaseDocument,
+    CasePassportRecord,
     CaseStatus,
     DocumentChunk,
     Draft,
@@ -261,10 +263,13 @@ class DraftRepository:
     async def get(self, draft_id: uuid.UUID) -> Draft | None:
         return await self._session.get(Draft, draft_id)
 
-    async def get_for_case(self, case_id: uuid.UUID) -> Draft | None:
-        result = await self._session.execute(
-            select(Draft).where(Draft.case_id == case_id).order_by(Draft.created_at.desc())
-        )
+    async def get_for_case(
+        self, case_id: uuid.UUID, kind: str | None = None
+    ) -> Draft | None:
+        stmt = select(Draft).where(Draft.case_id == case_id)
+        if kind:
+            stmt = stmt.where(Draft.document_kind == kind)
+        result = await self._session.execute(stmt.order_by(Draft.created_at.desc()))
         return result.scalars().first()
 
     async def add_version(
@@ -815,3 +820,56 @@ class JobRepository:
             )
 
         return resumable
+
+
+class CasePassportRepository:
+    """Паспорт дела: один на дело, перезаписывается целиком."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_for_case(self, case_id: uuid.UUID) -> CasePassportRecord | None:
+        stmt = select(CasePassportRecord).where(CasePassportRecord.case_id == case_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def upsert(self, case_id: uuid.UUID, **values: Any) -> CasePassportRecord:
+        record = await self.get_for_case(case_id)
+        if record is None:
+            record = CasePassportRecord(case_id=case_id, **values)
+            self._session.add(record)
+        else:
+            for key, value in values.items():
+                setattr(record, key, value)
+        await self._session.flush()
+        return record
+
+
+class DeviationRepository:
+    """Журнал расхождений: заменяется целиком при каждой проверке."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def replace_for_case(self, case_id: uuid.UUID, rows: list[dict[str, Any]]) -> int:
+        await self._session.execute(
+            delete(CaseDeviation).where(CaseDeviation.case_id == case_id)
+        )
+        for row in rows:
+            self._session.add(
+                CaseDeviation(
+                    case_id=case_id,
+                    code=str(row.get("code", "")),
+                    payload=row,
+                    severity=str(row.get("severity", "P1")),
+                )
+            )
+        await self._session.flush()
+        return len(rows)
+
+    async def list_for_case(self, case_id: uuid.UUID) -> list[CaseDeviation]:
+        stmt = (
+            select(CaseDeviation)
+            .where(CaseDeviation.case_id == case_id)
+            .order_by(CaseDeviation.code)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())

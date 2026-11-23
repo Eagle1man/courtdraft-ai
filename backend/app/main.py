@@ -19,10 +19,11 @@ from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import cases, demo, drafts, facts, feedback, system
+from app.api.routes import cases, claims, demo, drafts, facts, feedback, passport, speech, system
 from app.config import Settings, get_settings
 from app.db.bootstrap import MIGRATE_HINT, check_schema_drift, ensure_schema
 from app.db.repositories import InterruptedJob, JobRepository
@@ -61,6 +62,26 @@ class _NoCacheStaticFiles(StaticFiles):
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Собрать приложение FastAPI."""
     cfg = settings or get_settings()
+
+    # Проверка лицензии ОФЛАЙН: подписьЭЦП правообладателя, срок, продукт.
+    # Никаких обращений к сети. При license_required=True без действующей
+    # лицензии приложение работает в демонстрационном режиме.
+    from app.licensing import check_license_auto
+
+    lic, lic_source = check_license_auto(cfg.license_file)
+    if cfg.license_required and not lic.active:
+        logger.warning(
+            "Лицензия не активна (%s: %s). Формирование проекта заблокировано, "
+            "доступен демонстрационный режим.",
+            lic.state, lic.detail,
+        )
+    else:
+        logger.info(
+            "Лицензия: %s%s (источник: %s)",
+            "активна" if lic.active else "проверка не обязательна",
+            f" ({lic.holder})" if lic.holder else "",
+            "флешка" if lic_source.startswith(("E:", "F:", "G:", "H:", "I:", "J:", "K:")) or ("Removable" in lic_source) else "диск",
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -139,7 +160,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
         logger.info(
-            "CourtDraft AI %s стартует: env=%s llm=%s embeddings=%s",
+            "Помощник в суде %s стартует: env=%s llm=%s embeddings=%s",
             VERSION,
             cfg.app_env.value,
             cfg.llm_provider.value,
@@ -188,11 +209,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Сжатие ответов. Причина не в экономии трафика, а в доставке:
+    # интерфейс — один файл app.js около 90 КБ, и на путях с потерей
+    # больших пакетов (туннель, VPN, мобильная сеть) он подвисал на
+    # середине, а браузер показывал пустой экран. gzip укладывает его
+    # примерно в 20 КБ — ниже проблемного размера. Порог 1 КБ, чтобы не
+    # сжимать короткие JSON-ответы, где выигрыша нет.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+
     app.include_router(system.router)
     app.include_router(cases.router)
+    app.include_router(claims.router)
+    app.include_router(passport.router)
     app.include_router(drafts.router)
     app.include_router(facts.router)
     app.include_router(feedback.router)
+    app.include_router(speech.router)
     app.include_router(demo.router)
 
     @app.get("/api", include_in_schema=False)
@@ -266,3 +298,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=False,
+        log_level="info",
+    )

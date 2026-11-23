@@ -71,7 +71,7 @@ def a01() -> tuple[bool, str]:
     from app.ingestion.passport import CasePassport
 
     p = CasePassport.model_validate(_passport())
-    return p.money_kopecks["total"] == 10316329, "total замкнут"
+    return p.money_kopecks.total == 10316329, "total замкнут"
 
 
 @check("A18", "канон денег: копейки не рубли")
