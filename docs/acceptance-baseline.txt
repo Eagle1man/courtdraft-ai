@@ -1,0 +1,32 @@
+================================================================================================
+ПРИЁМКА ИСКА: дело 2-101/2025
+================================================================================================
+A01  FAIL  паспорт распарсен, приоритет над материалами                    не реализовано: No module named 'app.ingestion.passport'
+A18  FAIL  канон денег: копейки не рубли                                   не реализовано: No module named 'app.money'
+A19  FAIL  типизированные поля без валюты распарсены                       не реализовано: No module named 'app.money'
+A20  FAIL  единицы колонок таблиц наследуются                              не реализовано: No module named 'app.ingestion.slots'
+A21  FAIL  валидатор адреса отклоняет мусор                                не реализовано: No module named 'app.ingestion.slots'
+A22  FAIL  захват через границы документов невозможен; претензия не CLAIM  OSError: [WinError 10106] Не удается загрузить или инициализировать нужного поставщика услуг
+A02  FAIL  шапка точная, вхождений 1, плейсхолдеров нет                    не реализовано: No module named 'app.drafting.claim_model'
+A03  FAIL  цена иска 10026329, единственное значение                       не реализовано: No module named 'app.drafting.claim_model'
+A04  FAIL  основной долг в фактах и в просительной части                   не реализовано: No module named 'app.drafting.claim_model'
+A05  FAIL  частичный возврат и п/п № 45 присутствуют                       не реализовано: No module named 'app.drafting.claim_model'
+A06  FAIL  пошлина 2900, значения 4000 нет                                 не реализовано: No module named 'app.drafting.claim_model'
+A07  FAIL  итого 103163 и строка «Всего к взысканию»                       не реализовано: No module named 'app.drafting.claim_model'
+A08  FAIL  период процентов точный, «по дату подачи» нет                   не реализовано: No module named 'app.drafting.claim_model'
+A09  FAIL  нет инверсии ролей и обращения «Вами»                           не реализовано: No module named 'app.drafting.claim_model'
+A10  FAIL  нет мета-фраз, маркеров, обрывов                                не реализовано: No module named 'app.drafting.claim_model'
+A11  FAIL  приложений 7 на 9 листах, имён файлов нет                       не реализовано: No module named 'app.drafting.claim_model'
+A12  FAIL  дата и подпись заполнены                                        не реализовано: No module named 'app.drafting.claim_model'
+A13  FAIL  нет разрывов чисел и служебных заголовков                       не реализовано: No module named 'app.drafting.claim_model'
+A14  FAIL  объём 3200–4500 знаков                                          не реализовано: No module named 'app.drafting.claim_model'
+A15  FAIL  три прогона побайтово идентичны                                 не реализовано: No module named 'app.drafting.claim_model'
+A26  FAIL  рендер совпадает с эталоном (побайтово)                         не реализовано: No module named 'app.drafting.claim_model'
+A16  FAIL  экспорт 409 при p0_count > 0                                    не реализовано: No module named 'app.services.export_gate'
+A17  FAIL  экспорт 409 при устаревшем отчёте                               не реализовано: No module named 'app.services.export_gate'
+A23  FAIL  версии иска и решения изолированы                               NameError: name 'base_events' is not defined
+A25  PASS  фикстуры решения не изменились                                  d3d5e59d8e2b72c5
+------------------------------------------------------------------------------------------------
+PASS 1/25
+
+RC: 2

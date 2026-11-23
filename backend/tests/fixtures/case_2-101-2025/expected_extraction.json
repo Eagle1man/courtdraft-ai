@@ -1,0 +1,33 @@
+{
+  "court_for_header": "Мировому судье судебного участка № 5 Центрального района г. Москвы",
+  "city": "Москва",
+  "plaintiff_full": "Смирнова Ольга Викторовна",
+  "defendant_full": "Кузнецов Андрей Павлович",
+  "suit_date": "22.01.2025",
+  "loan_kopecks": 10000000,
+  "repaid_kopecks": 1000000,
+  "principal_kopecks": 9000000,
+  "interest_kopecks": 1026329,
+  "interest_period": ["11.08.2024", "05.03.2025"],
+  "interest_days": 207,
+  "price_kopecks": 10026329,
+  "fee_paid_kopecks": 290000,
+  "fee_receipt_id": "чек-ордер № 000123",
+  "fee_receipt_date": "20.01.2025",
+  "total_kopecks": 10316329,
+  "demands_count": 3,
+  "attachments_count": 7,
+  "attachments_sheets": 9,
+  "addresses": {"plaintiff": "MISSING", "defendant": "MISSING"},
+  "contract_date": "10.02.2024",
+  "contract_due_date": "01.08.2024",
+  "pretrial_letter_date": "20.12.2024",
+  "document_types": {
+    "05-Претензия": "PRETRIAL",
+    "06-Расчёт-процентов": "CALCULATION",
+    "07-Чек-ордер": "FEE_RECEIPT",
+    "10-Опись-приложений": "ATTACHMENT_LIST",
+    "01-Карточка-сторон": "PARTY_CARD"
+  },
+  "p0_count": 0
+}
