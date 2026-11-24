@@ -13,10 +13,18 @@ from typing import Any
 
 from .models import DocIntake, FactCandidate, FactStatus, Fragment, Locator
 
-_MONEY = re.compile(
-    r"(\d[\d\s\u00a0\u202f]*(?:[.,]\d{1,2})?)\s*(?:руб(?:\.|лей|ля)?|₽|р\.)",
+_COMPOSITE = re.compile(
+    r"(\d[\d\s\u00a0\u202f]*(?:,\d{2})?)\s*\(([^)]{3,120})\)"
+    r"\s*рубл\w*\s*(\d{1,2})\s*копе\w*",
     re.I,
 )
+_MONEY = re.compile(
+    rf"{_COMPOSITE.pattern}|"
+    r"(?<![\d.,])(\d[\d\s\u00a0\u202f]*(?:[.,]\d{1,2})?)"
+    r"(?![\d.,])\s*(?:руб(?:\.|лей|ля|ль|\b)|₽|р\.)",
+    re.I,
+)
+_BARE_MONEY = re.compile(r"(?<![\d.,])(\d[\d\s\u00a0\u202f]*(?:,\d{1,2})?)(?!\d|,\d)")
 _DATE1 = re.compile(r"\b(\d{1,2})[.](\d{1,2})[.](\d{4})\b")
 _MONTHS = {
     month: index
@@ -51,14 +59,31 @@ def norm(value: str) -> str:
 
 
 def parse_money(raw: str) -> Decimal | None:
+    composite = _COMPOSITE.search(raw)
+    if composite:
+        whole = re.sub(r"[\s\u00a0\u202f]", "", composite.group(1))
+        whole = whole.split(",", 1)[0]
+        try:
+            return Decimal(whole) + Decimal(composite.group(3)) / Decimal(100)
+        except InvalidOperation:
+            return None
     match = _MONEY.search(raw)
-    if not match:
-        return None
-    value = re.sub(r"[\s\u00a0\u202f]", "", match.group(1)).replace(",", ".")
-    try:
-        return Decimal(value)
-    except InvalidOperation:
-        return None
+    if match:
+        value = re.sub(r"[\s\u00a0\u202f]", "", match.group(0))
+        value = re.sub(r"(?:руб(?:\.|лей|ля|ль)?|₽|р\.)$", "", value, flags=re.I)
+        value = value.replace(",", ".")
+        try:
+            return Decimal(value)
+        except InvalidOperation:
+            return None
+    bare = _BARE_MONEY.search(raw)
+    if bare:
+        value = re.sub(r"[\s\u00a0\u202f]", "", bare.group(1)).replace(",", ".")
+        try:
+            return Decimal(value)
+        except InvalidOperation:
+            return None
+    return None
 
 
 def parse_date(raw: str) -> str | None:
@@ -241,7 +266,7 @@ _TYPED_MONEY = [
     ),
     (
         re.compile(
-            r"остаток\s+основного\s+долга|основной\s+долг|задолженность",
+            r"остаток\s+основного\s+долга|основной\s+долг|задолженность|\bдолг\b",
             re.I,
         ),
         "debt_amount",
@@ -283,11 +308,25 @@ _NARRATIVE_MONEY = [
 ]
 
 
-def _money_label(line: str) -> tuple[str, int] | None:
+def _money_label(line: str, filename_low: str = "") -> tuple[str, int] | None:
     for pattern, role in _TYPED_MONEY:
         match = pattern.search(line)
         if match:
             return role, match.end()
+    if "договор" in filename_low and re.search(r"в\s+размере|сумма\s+займа", line, re.I):
+        return "obligation_amount", 0
+    if re.search(r"платеж|платёж", filename_low) and re.search(
+        r"^Сумма:|частичный\s+возврат", line, re.I
+    ):
+        return "paid_amount", 0
+    if re.search(r"чек-ордер|чек\s+ордер", filename_low) and re.search(
+        r"^Сумма:|госпошлина", line, re.I
+    ):
+        return "fee_paid", 0
+    if re.search(r"расчет|расчёт", filename_low) and re.search(
+        r"итого\s+к\s+взысканию\s+процент", line, re.I
+    ):
+        return "interest_amount", 0
     matches = list(_MONEY.finditer(line))
     if len(matches) != 1:
         return None
@@ -298,11 +337,15 @@ def _money_label(line: str) -> tuple[str, int] | None:
     return (narrative_role, 0) if narrative_role else None
 
 
-def _date_roles_for_line(line: str) -> list[str]:
+def _date_roles_for_line(line: str, filename_low: str = "") -> list[str]:
     low = line.lower()
     if "дата иска" in low or "подача иска" in low or "дата подачи" in low:
         return ["suit_date"]
-    if re.search(r"период[^\n]*\bс\s*\d{1,2}\.\d{1,2}\.\d{4}\s+по\s+\d{1,2}\.\d{1,2}\.\d{4}", low):
+    if re.search(
+        r"период[^\n]*\d{1,2}\.\d{1,2}\.\d{4}\s*(?:по|[–-])\s*"
+        r"\d{1,2}\.\d{2}\.\d{4}",
+        low,
+    ):
         return ["interest_from", "interest_to"]
     if "дата отправки" in low or "направлено" in low or "отправка" in low:
         return ["pretrial_sent_date"]
@@ -313,7 +356,19 @@ def _date_roles_for_line(line: str) -> list[str]:
     if "оплачено" in low or "дата оплаты" in low or "чек-ордер" in low:
         return ["fee_receipt_date"]
     has_contract = bool(re.search(r"заключ[её]н\s+договор|между\s+.*договор", low))
-    has_due = bool(re.search(r"срок\s+возврата|не\s+позднее|сроком\s+возврата\s+до", low))
+    has_due = bool(
+        re.search(
+            r"срок\s+возврата|не\s+позднее|сроком\s+возврата\s+до|в\s+срок\s+до",
+            low,
+        )
+    )
+    if re.fullmatch(r"(?:от\s+)?\d{1,2}\.\d{1,2}\.\d{4}\.?", low):
+        if "договор" in filename_low:
+            return ["contract_date"]
+        if re.search(r"платеж|платёж", filename_low):
+            return ["partial_date"]
+        if re.search(r"чек-ордер|чек\s+ордер", filename_low):
+            return ["fee_receipt_date"]
     if has_contract and has_due:
         return ["contract_date", "contract_due_date"]
     if has_due:
@@ -383,24 +438,32 @@ def extract_facts_det(
 ) -> list[FactCandidate]:
     """Детерминированный добор по строкам, без захвата соседних полей."""
     output: list[FactCandidate] = []
+    contract_first_date: str | None = None
     for fragment in frags:
         for raw_line in fragment.text.splitlines():
             line = raw_line.strip()
             if not line:
                 continue
             low = line.lower()
+            filename_low = re.sub(r"[-_]+", " ", doc.filename.lower())
             is_table = line.startswith("|")
             is_copy = bool(re.search(r"копия|опись", low))
 
             # Явные подписи полей и нарратив с единственной суммой.
             if not is_table:
-                label = _money_label(line)
+                label = _money_label(line, filename_low)
                 if label and label[0] in roles:
                     role, label_end = label
                     money_matches = [
                         match for match in _MONEY.finditer(line)
                         if match.start() >= label_end
                     ]
+                    if not money_matches and label_end:
+                        money_matches = [
+                            match for match in _BARE_MONEY.finditer(line)
+                            if match.start() >= label_end
+                            and ("," in match.group(0) or "." in match.group(0))
+                        ]
                     for match in money_matches[:1]:
                         money = parse_money(match.group(0))
                         if money is None:
@@ -420,8 +483,19 @@ def extract_facts_det(
 
             # Даты: только по явным признакам строки, не из таблиц/описей.
             if not is_copy and not is_table:
-                date_roles = _date_roles_for_line(line)
-                filename_low = re.sub(r"[-_]+", " ", fragment.locator.filename.lower())
+                date_roles = _date_roles_for_line(line, filename_low)
+                if "договор" in filename_low and re.fullmatch(
+                    r"(?:от\s+)?\d{1,2}\.\d{1,2}\.\d{4}\.?", low
+                ):
+                    standalone_iso = parse_date(line)
+                    if standalone_iso:
+                        if contract_first_date is None:
+                            contract_first_date = standalone_iso
+                            date_roles = ["contract_date"]
+                        elif standalone_iso == contract_first_date:
+                            date_roles = ["contract_date"]
+                        else:
+                            date_roles = ["contract_due_date"]
                 if (
                     "дата отправки" in low
                     and ("опись вложения" in filename_low or "копия иска" in low)
@@ -512,9 +586,28 @@ def extract_facts_det(
                         confidence=0.85,
                     )
                 )
+            elif (
+                "court_name" in roles
+                and "карточка" in filename_low
+                and re.match(r"^(?:Мировой\s+судья|Судебный\s+участок)\b", line, re.I)
+            ):
+                output.append(
+                    _fact(
+                        "court_name",
+                        line,
+                        line,
+                        line,
+                        fragment.locator,
+                        confidence=0.9,
+                    )
+                )
 
             if "interest_days" in roles:
                 days_match = re.search(r"(\d+)\s*(?:дней|дня)\b", line, re.I)
+                if days_match is None:
+                    days_match = re.search(
+                        r"(?:всего\s+)?дней\s*[:\-]?\s*(\d+)\b", line, re.I
+                    )
                 if days_match and re.search(r"процент|просроч|период", low):
                     output.append(
                         _fact(
@@ -541,6 +634,20 @@ def extract_facts_det(
                             confidence=0.85,
                         )
                     )
+            if "case_number" in roles:
+                case_match = re.search(r"Дело\s*№\s*([\w/-]+)", line, re.I)
+                if case_match:
+                    value = case_match.group(1)
+                    output.append(
+                        _fact(
+                            "case_number",
+                            value,
+                            value,
+                            line,
+                            fragment.locator,
+                            confidence=0.8,
+                        )
+                    )
             if "contract_number" in roles:
                 contract_match = re.search(
                     r"договор\s+(?:займа\s+)?(б/н|№\s*[\w-]+)", line, re.I
@@ -555,6 +662,19 @@ def extract_facts_det(
                             line,
                             fragment.locator,
                             confidence=0.75,
+                        )
+                    )
+                elif "договор" in filename_low and re.fullmatch(
+                    r"б/н\.?", low
+                ):
+                    output.append(
+                        _fact(
+                            "contract_number",
+                            "б/н",
+                            "б/н",
+                            line,
+                            fragment.locator,
+                            confidence=0.85,
                         )
                     )
             if "pretrial_letter_id" in roles:

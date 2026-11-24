@@ -151,6 +151,46 @@ def test_parse_money_decimal() -> None:
     assert extract.parse_money("текст без денег") is None
 
 
+def test_parse_real_docx_money_formats() -> None:
+    assert extract.parse_money(
+        "100 000,00 (Сто тысяч) рублей 00 копеек"
+    ) == Decimal("100000")
+    assert extract.parse_money(
+        "Остаток задолженности после платежа: 90 000,00."
+    ) == Decimal("90000")
+    assert extract.parse_money(
+        "Всего к взысканию: 103 163,29."
+    ) == Decimal("103163.29")
+
+
+def test_real_docx_labels_without_currency() -> None:
+    field_map = json.loads((ARTIFACTS / "field_map.json").read_text("utf-8"))
+    roles = field_map["fields"]
+    descriptions = {
+        role: str(spec.get("hint", role)) for role, spec in roles.items()
+    }
+    kinds = {role: str(spec.get("kind", "text")) for role, spec in roles.items()}
+    text = (
+        "Судебный участок № 5 Центрального района г. Москвы\n"
+        "Дело № 2-101/2025. Долг: 90 000,00. "
+        "Период: 11.08.2024 – 05.03.2025. Всего дней: 207.\n"
+        "Итого к взысканию процентов: 10 263,29 "
+        "(Десять тысяч двести шестьдесят три) рубля 29 копеек."
+    )
+    document = reader.intake_one(
+        "real", "ПАПКА2-01-Карточка-сторон.docx", text.encode()
+    )
+    fragments = reader.fragments_from_text("real", document.filename, text)
+    facts = extract.extract_facts_det(document, fragments, descriptions, kinds)
+    by_role = {fact.role: fact.value_norm for fact in facts}
+    assert by_role["court_name"].startswith("Судебный участок № 5")
+    assert by_role["debt_amount"] == Decimal("90000")
+    assert by_role["interest_amount"] == Decimal("10263.29")
+    assert by_role["interest_days"] == 207
+    assert by_role["interest_from"] == "2024-08-11"
+    assert by_role["interest_to"] == "2025-03-05"
+
+
 def test_quote_gate_rejects_paraphrase() -> None:
     assert extract.quote_gate("Сумма долга 100 руб.", "сумма долга 100 руб.")
     assert not extract.quote_gate("Сумма долга 100 руб.", "долг составляет 100 рублей")
