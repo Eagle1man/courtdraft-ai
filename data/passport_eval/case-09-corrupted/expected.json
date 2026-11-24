@@ -1,0 +1,25 @@
+{
+ "fields": {
+  "plaintiff_name": null,
+  "defendant_name": null,
+  "court_name": null,
+  "contract_number": null,
+  "contract_date": null,
+  "contract_due_date": null,
+  "obligation_amount": null,
+  "paid_amount": null,
+  "debt_amount": null,
+  "interest_amount": null,
+  "fee_paid": null,
+  "claim_amount": null,
+  "claim_total": null,
+  "interest_from": null,
+  "interest_to": null,
+  "interest_days": null,
+  "interest_base": null,
+  "fee_receipt_id": null,
+  "fee_receipt_date": null,
+  "suit_date": null
+ },
+ "conflicts": []
+}

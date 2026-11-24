@@ -1,0 +1,112 @@
+[
+ {
+  "case": "case-01-complete",
+  "precision": 0.95,
+  "recall": 0.95,
+  "f1": 0.95,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "0/0",
+  "time_sec": 0.083
+ },
+ {
+  "case": "case-02-missing-document",
+  "precision": 0.944,
+  "recall": 0.944,
+  "f1": 0.944,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "2/2",
+  "time_sec": 0.043
+ },
+ {
+  "case": "case-03-different-amounts",
+  "precision": 0.895,
+  "recall": 0.895,
+  "f1": 0.895,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "0/1",
+  "time_sec": 0.052
+ },
+ {
+  "case": "case-04-different-dates",
+  "precision": 0.947,
+  "recall": 0.947,
+  "f1": 0.947,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "1/1",
+  "time_sec": 0.051
+ },
+ {
+  "case": "case-05-partial-payment",
+  "precision": 0.95,
+  "recall": 0.95,
+  "f1": 0.95,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "0/0",
+  "time_sec": 0.046
+ },
+ {
+  "case": "case-06-incomplete-requisites",
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "2/2",
+  "time_sec": 0.042
+ },
+ {
+  "case": "case-07-ambiguous",
+  "precision": 0.947,
+  "recall": 0.947,
+  "f1": 0.947,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "1/1",
+  "time_sec": 0.047
+ },
+ {
+  "case": "case-08-duplicates",
+  "precision": 0.95,
+  "recall": 0.95,
+  "f1": 0.95,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "0/0",
+  "time_sec": 0.045
+ },
+ {
+  "case": "case-09-corrupted",
+  "precision": 0.0,
+  "recall": 0.0,
+  "f1": 0.0,
+  "evidence_coverage": 0.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "20/20",
+  "time_sec": 0.03
+ },
+ {
+  "case": "case-10-conflicting-statements",
+  "precision": 0.895,
+  "recall": 0.895,
+  "f1": 0.895,
+  "evidence_coverage": 1.0,
+  "unsupported_values": 0,
+  "conflict_recall": 1.0,
+  "correct_empty": "0/1",
+  "time_sec": 0.054
+ }
+]

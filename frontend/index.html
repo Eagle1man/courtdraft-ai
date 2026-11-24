@@ -398,6 +398,30 @@
         <div id="facts-body"></div>
       </details>
 
+      <!-- Паспорт-ИИ: дополнительный способ подготовки паспорта.
+           Старый блок «Паспорт дела» остаётся без изменений. -->
+      <button class="btn full" id="btn-passport" hidden>
+        Сформировать паспорт с помощью ИИ
+      </button>
+      <details class="details-box" id="passport" hidden>
+        <summary>
+          Паспорт (ИИ): заполнено
+          <span id="pp-filled">0</span>/<span id="pp-total">0</span>
+          <span class="chip amber" id="pp-conflicts" hidden></span>
+        </summary>
+        <div id="pp-body"></div>
+        <div class="pp-actions">
+          <button class="btn ghost" id="btn-pp-revalidate">Проверить заново</button>
+          <button class="btn primary" id="btn-pp-confirm" disabled>
+            Подтвердить и сохранить паспорт
+          </button>
+        </div>
+        <p class="muted small">
+          ИИ предлагает значения, программа проверяет источники и арифметику.
+          Сохранение создаёт бэкап прежнего паспорта и не заменяет проверку человеком.
+        </p>
+      </details>
+
       <details class="details-box" id="versions" hidden>
         <summary>История версий и правок</summary>
         <ul id="version-list"></ul>
@@ -521,6 +545,7 @@
 </div>
 
 <script src="app.js?v=0.8.4"></script>
+<script src="passport.js?v=1.0.0"></script>
 
 
 

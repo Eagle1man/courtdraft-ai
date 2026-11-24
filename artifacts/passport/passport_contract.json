@@ -1,0 +1,153 @@
+{
+ "samples": [
+  "backend\\tests\\fixtures\\case_2-101-2025\\00-ПАСПОРТ-ДЕЛА.json"
+ ],
+ "fields": {
+  "schema": {
+   "types": [
+    "string"
+   ],
+   "required": true,
+   "examples": [
+    "case-passport/3.1"
+   ]
+  },
+  "mode": {
+   "types": [
+    "string"
+   ],
+   "required": true,
+   "examples": [
+    "ETALON"
+   ]
+  },
+  "case": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'number': '2-101/2025', 'court_for_header': 'Мировому судье судебного участка № 5 Центрального района г. Москвы', 'city"
+   ]
+  },
+  "parties": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'plaintiff': {'full': 'Смирнова Ольга Викторовна', 'short': 'Смирнова О.В.', 'genitive': 'Смирновой Ольги Викторовны', "
+   ]
+  },
+  "money_kopecks": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'loan': 10000000, 'repaid': 1000000, 'principal': 9000000, 'interest': 1026329, 'fee_paid': 290000, 'price': 10026329, "
+   ]
+  },
+  "interest": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'norm': 'ст. 395 ГК РФ', 'from': '11.08.2024', 'to': '05.03.2025', 'days': 207, 'base_kopecks': 9000000, 'periods': [{'"
+   ]
+  },
+  "claims": {
+   "types": [
+    "list"
+   ],
+   "required": true,
+   "examples": [
+    "[{'n': 1, 'kind': 'principal', 'amount_kopecks': 9000000, 'text': 'задолженность по основному долгу по договору займа б/"
+   ]
+  },
+  "contract": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'number': 'б/н', 'date': '10.02.2024', 'due_date': '01.08.2024', 'interest_free': True, 'subject': 'заём'}"
+   ]
+  },
+  "events": {
+   "types": [
+    "list"
+   ],
+   "required": true,
+   "examples": [
+    "[{'date': '10.02.2024', 'code': 'CONTRACT', 'fact': 'заключён договор займа б/н, передано 100 000,00 руб.'}, {'date': '1"
+   ]
+  },
+  "suit_date": {
+   "types": [
+    "date"
+   ],
+   "required": true,
+   "examples": [
+    "22.01.2025"
+   ]
+  },
+  "fee_receipt": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'id': 'чек-ордер № 000123', 'date': '20.01.2025', 'amount_kopecks': 290000}"
+   ]
+  },
+  "pretrial": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'letter_id': 'исх. № 1', 'letter_date': '20.12.2024', 'rpo': '10500012345678', 'sent_date': '23.12.2024', 'received_dat"
+   ]
+  },
+  "suit_rpo": {
+   "types": [
+    "money?"
+   ],
+   "required": true,
+   "examples": [
+    "10500012345912"
+   ]
+  },
+  "law": {
+   "types": [
+    "object"
+   ],
+   "required": true,
+   "examples": [
+    "{'material': ['ст. 309 ГК РФ', 'ст. 310 ГК РФ', 'ст. 807 ГК РФ', 'ст. 808 ГК РФ', 'ст. 810 ГК РФ', 'ст. 395 ГК РФ'], 'pr"
+   ]
+  },
+  "documents": {
+   "types": [
+    "list"
+   ],
+   "required": true,
+   "examples": [
+    "[{'file': '01-Карточка-сторон.md', 'title': 'Карточка сторон и подсудности', 'sheets': 1, 'appendix': False}, {'file': '"
+   ]
+  },
+  "gaps": {
+   "types": [
+    "list"
+   ],
+   "required": true,
+   "examples": [
+    "['адрес истца', 'адрес ответчика', 'телефон истца', 'паспорт истца', 'паспорт ответчика', 'адрес судебного участка', 'КБ"
+   ]
+  }
+ },
+ "role_candidates": {},
+ "note": "field_map.json заполняется по этим данным; роли без кандидата — вручную"
+}

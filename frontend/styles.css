@@ -1344,3 +1344,14 @@ footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wr
 #export-mode{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line2);border-radius:9px;background:#fff}
 #m-sources.warn{color:var(--amber)}
 
+/* Паспорт-ИИ: таблица полей с источником и ручным подтверждением */
+.pp-table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+.pp-table th,.pp-table td{border-bottom:1px solid var(--line);padding:7px 6px;vertical-align:top;text-align:left}
+.pp-table th{color:var(--muted);font-weight:600;background:var(--teal-soft)}
+.pp-table input{width:100%;min-width:160px;border:1px solid var(--line2);border-radius:7px;padding:6px 7px;font:inherit;background:#fff}
+.pp-table .pp-source{max-width:320px;color:var(--ink2);font-size:12px}
+.pp-table .pp-actions-cell{white-space:nowrap}
+.pp-table .btn{padding:5px 8px;min-height:30px}
+.pp-empty{color:var(--muted);padding:10px 0}
+
+

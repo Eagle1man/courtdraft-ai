@@ -1,0 +1,117 @@
+{
+  "validator": "app.passport_ai.validators:validate_existing",
+  "claim_generator": "app.drafting.claim_draft:generate_claim_draft",
+  "defaults": {
+    "/schema": "case-passport/3.1",
+    "/mode": "ETALON"
+  },
+  "fields": {
+    "case_number": {"pointer": "/case/number", "kind": "text", "required": false, "hint": "номер дела"},
+    "court_name": {"pointer": "/case/court_for_header", "kind": "text", "required": true, "hint": "суд для шапки"},
+    "court_city": {"pointer": "/case/city", "kind": "text", "required": false, "hint": "город"},
+    "court_address": {"pointer": "/case/court_address", "kind": "text", "required": false, "hint": "адрес суда"},
+    "judge_name": {"pointer": "/case/judge", "kind": "text", "required": false, "hint": "судья"},
+    "decision_date": {"pointer": "/case/decision_date", "kind": "date_ru", "required": false, "hint": "дата решения"},
+
+    "plaintiff_name": {"pointer": "/parties/plaintiff/full", "kind": "name", "required": true, "hint": "ФИО истца полностью"},
+    "plaintiff_short": {"pointer": "/parties/plaintiff/short", "kind": "text", "required": false, "hint": "ФИО истца сокращённо"},
+    "plaintiff_genitive": {"pointer": "/parties/plaintiff/genitive", "kind": "text", "required": false, "hint": "ФИО истца в родительном падеже"},
+    "plaintiff_instrumental": {"pointer": "/parties/plaintiff/instrumental", "kind": "text", "required": false, "hint": "ФИО истца в творительном падеже"},
+    "plaintiff_address": {"pointer": "/parties/plaintiff/address", "kind": "text", "required": false, "hint": "адрес истца"},
+    "plaintiff_phone": {"pointer": "/parties/plaintiff/phone", "kind": "text", "required": false, "hint": "телефон истца"},
+    "plaintiff_identifier": {"pointer": "/parties/plaintiff/identifier", "kind": "text", "required": false, "hint": "паспорт/идентификатор истца"},
+
+    "defendant_name": {"pointer": "/parties/defendant/full", "kind": "name", "required": true, "hint": "ФИО ответчика полностью"},
+    "defendant_short": {"pointer": "/parties/defendant/short", "kind": "text", "required": false, "hint": "ФИО ответчика сокращённо"},
+    "defendant_genitive": {"pointer": "/parties/defendant/genitive", "kind": "text", "required": false, "hint": "ФИО ответчика в родительном падеже"},
+    "defendant_instrumental": {"pointer": "/parties/defendant/instrumental", "kind": "text", "required": false, "hint": "ФИО ответчика в творительном падеже"},
+    "defendant_address": {"pointer": "/parties/defendant/address", "kind": "text", "required": false, "hint": "адрес ответчика"},
+    "defendant_identifier": {"pointer": "/parties/defendant/identifier", "kind": "text", "required": false, "hint": "паспорт/идентификатор ответчика"},
+
+    "contract_number": {"pointer": "/contract/number", "kind": "text", "required": false, "hint": "номер договора"},
+    "contract_date": {"pointer": "/contract/date", "kind": "date_ru", "required": true, "hint": "дата договора"},
+    "contract_due_date": {"pointer": "/contract/due_date", "kind": "date_ru", "required": true, "hint": "срок возврата/исполнения"},
+    "contract_subject": {"pointer": "/contract/subject", "kind": "text", "required": false, "hint": "предмет договора"},
+    "partial_date": {"pointer": "", "kind": "date_ru", "required": false, "hint": "дата частичного возврата"},
+
+    "obligation_amount": {"pointer": "/money_kopecks/loan", "kind": "money_kopecks", "required": true, "hint": "сумма займа/обязательства"},
+    "paid_amount": {"pointer": "/money_kopecks/repaid", "kind": "money_kopecks", "required": true, "hint": "частичный возврат/оплата"},
+    "debt_amount": {"pointer": "/money_kopecks/principal", "kind": "money_kopecks", "required": true, "hint": "остаток основного долга"},
+    "interest_amount": {"pointer": "/money_kopecks/interest", "kind": "money_kopecks", "required": true, "hint": "проценты по ст. 395"},
+    "fee_paid": {"pointer": ["/money_kopecks/fee_paid", "/fee_receipt/amount_kopecks"], "kind": "money_kopecks", "required": true, "hint": "уплаченная государственная пошлина"},
+    "claim_amount": {"pointer": "/money_kopecks/price", "kind": "money_kopecks", "required": true, "hint": "цена иска без пошлины"},
+    "claim_total": {"pointer": "/money_kopecks/total", "kind": "money_kopecks", "required": true, "hint": "всего к взысканию"},
+
+    "interest_from": {"pointer": "/interest/from", "kind": "date_ru", "required": true, "hint": "начало периода процентов"},
+    "interest_to": {"pointer": "/interest/to", "kind": "date_ru", "required": true, "hint": "конец периода процентов"},
+    "interest_days": {"pointer": "/interest/days", "kind": "int", "required": true, "hint": "число дней процентов"},
+    "interest_base": {"pointer": "/interest/base_kopecks", "kind": "money_kopecks", "required": true, "hint": "база расчёта процентов"},
+
+    "pretrial_letter_id": {"pointer": "/pretrial/letter_id", "kind": "text", "required": false, "hint": "исходящий номер претензии"},
+    "pretrial_date": {"pointer": "/pretrial/letter_date", "kind": "date_ru", "required": false, "hint": "дата претензии"},
+    "pretrial_rpo": {"pointer": "/pretrial/rpo", "kind": "text", "required": false, "hint": "почтовый идентификатор претензии"},
+    "pretrial_sent_date": {"pointer": "/pretrial/sent_date", "kind": "date_ru", "required": false, "hint": "дата отправки претензии"},
+    "pretrial_received_date": {"pointer": "/pretrial/received_date", "kind": "date_ru", "required": false, "hint": "дата вручения претензии"},
+    "pretrial_term_days": {"pointer": "/pretrial/term_days", "kind": "int", "required": false, "hint": "срок добровольного исполнения"},
+    "pretrial_term_end": {"pointer": "/pretrial/term_end", "kind": "date_ru", "required": false, "hint": "окончание срока добровольного исполнения"},
+
+    "fee_receipt_id": {"pointer": "/fee_receipt/id", "kind": "text", "required": true, "hint": "номер чека-ордера"},
+    "fee_receipt_date": {"pointer": "/fee_receipt/date", "kind": "date_ru", "required": true, "hint": "дата оплаты пошлины"},
+    "suit_date": {"pointer": "/suit_date", "kind": "date_ru", "required": true, "hint": "дата подачи иска"},
+    "suit_rpo": {"pointer": "/suit_rpo", "kind": "text", "required": false, "hint": "РПО копии иска"},
+    "material_norms": {"pointer": "/law/material", "kind": "list", "required": false, "hint": "нормы материального права"},
+    "procedural_norms": {"pointer": "/law/procedural", "kind": "list", "required": false, "hint": "нормы процессуального права"}
+  },
+  "gap_roles": [
+    "court_address",
+    "plaintiff_address",
+    "plaintiff_phone",
+    "plaintiff_identifier",
+    "defendant_address",
+    "defendant_identifier"
+  ],
+  "derived_fields": {
+    "debt_amount": {"op": "subtract", "left": "obligation_amount", "right": "paid_amount"},
+    "interest_base": {"op": "copy", "source": "debt_amount"},
+    "interest_days": {"op": "inclusive_days", "start": "interest_from", "end": "interest_to"},
+    "claim_amount": {"op": "add", "left": "debt_amount", "right": "interest_amount"},
+    "claim_total": {"op": "add", "left": "claim_amount", "right": "fee_paid"}
+  },
+  "derived": {
+    "claims": [
+      {"n": 1, "amount_role": "debt_amount", "kind": "principal", "text": "задолженность по основному долгу"},
+      {"n": 2, "amount_role": "interest_amount", "kind": "interest", "text": "проценты за пользование чужими денежными средствами", "period_roles": ["interest_from", "interest_to"]},
+      {"n": 3, "amount_role": "fee_paid", "kind": "state_fee", "text": "расходы по уплате государственной пошлины"}
+    ],
+    "events": [
+      {"code": "CONTRACT", "date_role": "contract_date", "fact": "заключён договор {contract_number} от {contract_date}"},
+      {"code": "DUE", "date_role": "contract_due_date", "fact": "срок исполнения обязательства"},
+      {"code": "PARTIAL", "date_role": "partial_date", "fact": "частичный возврат {paid_amount}"},
+      {"code": "INT_FROM", "date_role": "interest_from", "fact": "начало периода процентов"},
+      {"code": "CLAIM", "date_role": "pretrial_date", "fact": "направлена претензия {pretrial_letter_id}"},
+      {"code": "CLAIM_SEND", "date_role": "pretrial_sent_date", "fact": "отправка претензии, РПО {pretrial_rpo}"},
+      {"code": "CLAIM_RECV", "date_role": "pretrial_received_date", "fact": "вручение претензии"},
+      {"code": "TERM_END", "date_role": "pretrial_term_end", "fact": "истечение срока добровольного исполнения"},
+      {"code": "FEE", "date_role": "fee_receipt_date", "fact": "уплата госпошлины, {fee_receipt_id}"},
+      {"code": "FILE", "date_role": "suit_date", "fact": "подача иска"}
+    ],
+    "documents": {
+      "appendix_patterns": ["договор", "расписк", "платеж", "платёж", "претенз", "расчет", "расчёт", "чек", "опись вложения"],
+      "exclude_patterns": ["исковое заявление", "карточка", "пояснения", "опись приложений"],
+      "title_by_type": {
+        "contract": "Договор",
+        "receipt": "Расписка",
+        "payment": "Платёжное поручение",
+        "pretension": "Претензия",
+        "calculation": "Расчёт процентов",
+        "fee_receipt": "Чек-ордер",
+        "enclosure": "Опись вложения",
+        "attachment_list": "Опись приложений",
+        "party_card": "Карточка сторон",
+        "explanations": "Пояснения истца",
+        "court_document": "Судебный документ",
+        "other": "Документ по делу"
+      }
+    }
+  }
+}

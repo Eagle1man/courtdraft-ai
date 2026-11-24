@@ -39,3 +39,26 @@ class DeviationOut(BaseModel):
     code: str
     severity: str
     payload: dict[str, Any]
+
+
+class PassportAIStatusOut(BaseModel):
+    stage: str
+    updated_at: str | None = None
+    fields_total: int = 0
+    fields_filled: int = 0
+    conflicts: int = 0
+    blocking_issues: int = 0
+    can_confirm: bool = False
+
+
+class PassportFieldEditIn(BaseModel):
+    value: Any = None
+    action: str  # confirmed | edited | rejected
+
+
+class PassportAIAnalysisOut(BaseModel):
+    documents: list[dict[str, Any]] = Field(default_factory=list)
+    facts: list[dict[str, Any]] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    fields: list[dict[str, Any]] = Field(default_factory=list)
+    validation: list[dict[str, Any]] = Field(default_factory=list)
