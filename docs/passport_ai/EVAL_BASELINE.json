@@ -8,7 +8,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "0/0",
-  "time_sec": 0.179
+  "time_sec": 0.12
  },
  {
   "case": "case-02-missing-document",
@@ -19,7 +19,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "2/2",
-  "time_sec": 0.104
+  "time_sec": 0.066
  },
  {
   "case": "case-03-different-amounts",
@@ -30,7 +30,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "0/1",
-  "time_sec": 0.082
+  "time_sec": 0.075
  },
  {
   "case": "case-04-different-dates",
@@ -41,7 +41,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "1/1",
-  "time_sec": 0.096
+  "time_sec": 0.064
  },
  {
   "case": "case-05-partial-payment",
@@ -52,7 +52,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "0/0",
-  "time_sec": 0.088
+  "time_sec": 0.046
  },
  {
   "case": "case-06-incomplete-requisites",
@@ -63,7 +63,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "2/2",
-  "time_sec": 0.055
+  "time_sec": 0.048
  },
  {
   "case": "case-07-ambiguous",
@@ -74,7 +74,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "1/1",
-  "time_sec": 0.104
+  "time_sec": 0.051
  },
  {
   "case": "case-08-duplicates",
@@ -85,7 +85,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "0/0",
-  "time_sec": 0.072
+  "time_sec": 0.066
  },
  {
   "case": "case-09-corrupted",
@@ -96,7 +96,7 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "20/20",
-  "time_sec": 0.082
+  "time_sec": 0.042
  },
  {
   "case": "case-10-conflicting-statements",
@@ -107,6 +107,6 @@
   "unsupported_values": 0,
   "conflict_recall": 1.0,
   "correct_empty": "0/1",
-  "time_sec": 0.092
+  "time_sec": 0.068
  }
 ]

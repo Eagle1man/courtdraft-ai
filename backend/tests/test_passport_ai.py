@@ -298,6 +298,27 @@ def test_same_amount_no_conflict() -> None:
     assert not conflicts
 
 
+def test_deterministic_fact_priority_over_llm() -> None:
+    deterministic = _fact("debt_amount", "100", filename="a.txt")
+    deterministic.model = "regex"
+    llm = _fact("debt_amount", "150", confidence=1.0, filename="b.txt")
+    llm.model = "host"
+    chosen, conflicts, _ = reconcile.reconcile([deterministic, llm], ROLES)
+    assert chosen["debt_amount"] is deterministic
+    assert not conflicts
+
+
+def test_llm_fills_field_missing_from_regex() -> None:
+    regex_fact = _fact("debt_amount", "100", filename="a.txt")
+    regex_fact.model = "regex"
+    llm_fact = _fact("plaintiff_name", "Иванов Иван Иванович", filename="b.txt")
+    llm_fact.model = "host"
+    chosen, conflicts, _ = reconcile.reconcile([regex_fact, llm_fact], ROLES)
+    assert chosen["debt_amount"] is regex_fact
+    assert chosen["plaintiff_name"] is llm_fact
+    assert not conflicts
+
+
 def test_arithmetic_check_flags_mismatch() -> None:
     facts = [
         _fact("obligation_amount", "1000"),
@@ -356,6 +377,32 @@ def test_confirm_refuses_blocking_draft(tmp_path: Path) -> None:
     )
     assert result["can_confirm"] is False
     assert service.confirm("case-2")["ok"] is False
+
+
+def test_existing_passport_is_not_an_analysis_source(tmp_path: Path) -> None:
+    source = (
+        "Истец: Истец И.И.\nОтветчик: Ответчик О.О.\nДоговор № 1\n"
+        "Сумма договора: 1000 руб.\nОстаток основного долга: 700 руб.\n"
+    )
+    passport = '{"money_kopecks":{"principal":999999},"schema":"case-passport/3.1"}'
+    service = PassportService(tmp_path, FakeLLM(), CONTRACT, FIELD_MAP)
+    asyncio.run(
+        service.run(
+            "case-3",
+            [
+                ("01_claim.txt", source.encode()),
+                ("00-ПАСПОРТ-ДЕЛА.json", passport.encode()),
+            ],
+        )
+    )
+    analysis = service.analysis("case-3")
+    assert len(analysis["documents"]) == 2
+    assert not any(
+        fact["locator"]["filename"] == "00-ПАСПОРТ-ДЕЛА.json"
+        for fact in analysis["facts"]
+    )
+    debt = next(field for field in analysis["fields"] if field["role"] == "debt_amount")
+    assert debt["value"] == 70000
 
 
 def test_reference_case_without_llm(tmp_path: Path) -> None:

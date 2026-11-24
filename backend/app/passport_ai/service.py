@@ -102,6 +102,13 @@ class PassportService:
             fragments.update(fragments_by_doc)
         self._save(case_id, "intake.json", [item.model_dump() for item in documents])
 
+        # Существующий паспорт — целевой артефакт, а не исходный документ.
+        # Если он уже лежит в деле, не извлекаем из него факты повторно.
+        source_documents = [
+            document for document in documents
+            if not self._is_passport_document(document)
+        ]
+
         force = force_reprocess_ids or set()
         for document in documents:
             if document.duplicate_of:
@@ -124,7 +131,7 @@ class PassportService:
         self._save(case_id, "intake.json", [item.model_dump() for item in documents])
 
         classes: dict[str, DocClass] = {}
-        for document in documents:
+        for document in source_documents:
             if document.duplicate_of or document.read_ok is False:
                 continue
             doc_fragments = fragments.get(document.document_id, [])
@@ -142,7 +149,7 @@ class PassportService:
             role: str(spec.get("kind", "text"))
             for role, spec in self.roles().items()
         }
-        for document in documents:
+        for document in source_documents:
             doc_fragments = fragments.get(document.document_id, [])
             if document.duplicate_of or not doc_fragments:
                 continue
@@ -162,9 +169,9 @@ class PassportService:
                 kinds,
             )
             doc_class = classes.get(document.document_id)
-            for fact in llm_facts + deterministic_facts:
+            for fact in deterministic_facts + llm_facts:
                 fact.doc_type = doc_class.doc_type if doc_class else ""
-            all_facts.extend(llm_facts + deterministic_facts)
+            all_facts.extend(deterministic_facts + llm_facts)
         self._save(
             case_id, "facts.json", [fact.model_dump() for fact in all_facts]
         )
@@ -180,7 +187,7 @@ class PassportService:
             self.roles(),
             conflicts,
             field_map=self.field_map,
-            documents=documents,
+            documents=source_documents,
             classes=classes,
         )
         findings += assembler.validate_draft(
@@ -304,6 +311,11 @@ class PassportService:
             "state.json",
             {"stage": Stage.CONFIRMED, "updated_at": now_iso()},
         )
+
+    @staticmethod
+    def _is_passport_document(document: DocIntake) -> bool:
+        name = document.filename.lower()
+        return "паспорт" in name and document.format in {"json", "unknown"}
 
     def _coerce_user_value(self, kind: str, value: Any) -> Any:
         if kind == "money_kopecks":

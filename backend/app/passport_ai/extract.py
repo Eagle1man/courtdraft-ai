@@ -377,7 +377,7 @@ def _date_roles_for_line(line: str, filename_low: str = "") -> list[str]:
         return ["contract_date"]
     if (
         re.search(r"частичный\s+возврат|возвратил|перечислен", low)
-        and not re.search(r"по\s+договору", low)
+        and not re.search(r"по\s+договор", low)
     ):
         return ["partial_date"]
     if "претенз" in low and not re.search(r"копия|опись", low):

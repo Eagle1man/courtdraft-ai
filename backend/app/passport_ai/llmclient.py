@@ -106,6 +106,8 @@ class HostAdapter:
         self.provider = provider
 
     async def generate_json(self, system: str, user: str) -> dict[str, Any]:
+        import asyncio
+
         from app.llm.base import LLMMessage, LLMRequest, LLMRole
 
         request = LLMRequest(
@@ -118,7 +120,7 @@ class HostAdapter:
             max_tokens=1500,
             json_mode=True,
         )
-        response = await self.provider.generate(request)
+        response = await asyncio.to_thread(self.provider.generate, request)
         return _parse_json(response.text)
 
 

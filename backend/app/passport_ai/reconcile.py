@@ -108,6 +108,16 @@ def reconcile(
 
     for role, spec in roles.items():
         group = by_role.get(role, [])
+        # Детерминированный разбор приоритетен для того же поля: LLM может
+        # найти цитату, но неверно интерпретировать роль (например, назвать
+        # остаток долга суммой договора). LLM-факты остаются в analysis,
+        # но не создают конфликт с надёжным regex-результатом.
+        deterministic_group = [
+            fact for fact in group
+            if fact.model == "regex" and fact.status != FactStatus.UNSUPPORTED
+        ]
+        if deterministic_group:
+            group = deterministic_group
         if not group:
             chosen[role] = None
             if spec.get("required"):
